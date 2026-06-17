@@ -1,3 +1,5 @@
+@import url(https://db.onlinewebfonts.com/c/926fcaaa8b66e0df67e176f329259711?family=PP+Editorial+New);
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -5,6 +7,13 @@
 @layer base {
   body {
     @apply bg-gray-950 text-gray-100 antialiased;
+    font-family: "PP Editorial New", serif;
+  }
+}
+
+@layer utilities {
+  .font-editorial {
+    font-family: "PP Editorial New", serif;
   }
 }
 
