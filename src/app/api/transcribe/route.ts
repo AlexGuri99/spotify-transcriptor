@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import * as cheerio from "cheerio";
 import Parser from "rss-parser";
 import OpenAI from "openai";
@@ -38,11 +38,6 @@ interface SuccessResponse {
   adFiltered: boolean;
 }
 
-interface ErrorResponse {
-  error: string;
-  detail?: string;
-}
-
 /* ------------------------------------------------------------------ */
 /* Configs & Constants                                               */
 /* ------------------------------------------------------------------ */
@@ -56,7 +51,7 @@ const CHUNK_SIZE_BYTES = 1 * 1024 * 1024;
 const CHUNK_DURATION_SECONDS = 30;
 
 /** 🔒 CRITICAL CONCURRENCY LIMIT: Process only 3 at a time to stay under 512MB RAM on Render */
-const MAX_CONCURRENT_TRANSCRIBERS = 3; 
+const MAX_CONCURRENT_TRANSCRIBERS = 3;
 
 /** Build the OpenAI-compatible client pointed at OpenRouter. */
 function createOpenRouterClient() {
@@ -126,7 +121,7 @@ async function scrapeSpotifyEpisode(url: string): Promise<ScrapedMetadata | null
 
   const hasIndexPrefix = /^(?:פרק\s|Ep[\s.]|Episode\s)/i.test(rawTitle);
   const dashMatch = rawTitle.match(/^(.+?)\s+[-–—]\s+(.+)$/);
-  
+
   if (dashMatch && !hasIndexPrefix) {
     episodeTitle = dashMatch[1].trim();
     showName = dashMatch[2].trim();
@@ -399,127 +394,165 @@ async function filterAds(openai: OpenAI, rawTranscript: string, segments: Transc
 }
 
 /* ------------------------------------------------------------------ */
-/* POST handler                                                      */
+/* POST handler — streaming NDJSON response                           */
 /* ------------------------------------------------------------------ */
 
-export async function POST(req: NextRequest): Promise<NextResponse<SuccessResponse | ErrorResponse>> {
-  let tmpDir = "";
-  try {
-    const body = await req.json();
-    const spotifyUrl: string | undefined = body.spotifyUrl;
-    const filterAdsFlag: boolean = body.filterAds === true;
+export async function POST(req: NextRequest): Promise<Response> {
+  const body = await req.json();
+  const spotifyUrl: string | undefined = body.spotifyUrl;
+  const filterAdsFlag: boolean = body.filterAds === true;
 
-    if (!spotifyUrl || typeof spotifyUrl !== "string") {
-      return NextResponse.json({ error: "Missing or invalid 'spotifyUrl' in request body." }, { status: 400 });
-    }
+  const encoder = new TextEncoder();
+  const stream = new TransformStream();
+  const writer = stream.writable.getWriter();
 
-    const trimmedUrl = spotifyUrl.trim();
+  // Convenience helper: write a JSON line to the stream
+  const send = (data: Record<string, unknown>) =>
+    writer.write(encoder.encode(JSON.stringify(data) + "\n"));
 
-    // --- Step A: Scrape metadata ---
-    const metadata = await scrapeSpotifyEpisode(trimmedUrl);
-    if (!metadata) {
-      return NextResponse.json({ error: "Could not find episode metadata on that Spotify page." }, { status: 400 });
-    }
+  // All processing runs in the background; Response is returned immediately
+  (async () => {
+    let tmpDir = "";
+    try {
+      if (!spotifyUrl || typeof spotifyUrl !== "string") {
+        await send({ type: "error", error: "Missing or invalid 'spotifyUrl' in request body." });
+        return;
+      }
 
-    // --- Step B: Multi-pass RSS feed resolution ---
-    let rssFeedUrl: string | null = null;
-    const rssResult = await findRssFeed(metadata.showName, metadata.episodeTitle);
-    if (rssResult.found) {
-      rssFeedUrl = rssResult.feedUrl;
-      console.log("-> Parsed RSS URL:", rssFeedUrl);
-    } else if (rssResult.reason === "empty-results") {
-      return NextResponse.json({ error: "Show could not be resolved via public directories (Potential Spotify Exclusive)." }, { status: 404 });
-    } else if (rssResult.reason === "unknown-show") {
-      return NextResponse.json({ error: "This episode could not be located in public directories and is likely a Spotify Exclusive show." }, { status: 404 });
-    }
+      const trimmedUrl = spotifyUrl.trim();
 
-    // --- Step C: Match episode in RSS feed & download audio via safe disk stream ---
-    let audioFileProcessed = false;
-    let episodeFound = false;
+      // --- Step A: Scrape metadata ---
+      await send({ type: "status", message: "Fetching episode metadata..." });
+      const metadata = await scrapeSpotifyEpisode(trimmedUrl);
+      if (!metadata) {
+        await send({ type: "error", error: "Could not find episode metadata on that Spotify page." });
+        return;
+      }
 
-    if (rssFeedUrl) {
-      try {
-        const episode = await findEpisodeInFeed(rssFeedUrl, metadata.episodeTitle);
-        if (episode?.enclosureUrl) {
-          episodeFound = true;
-          
-          // 🧠 1. Set up ephemeral disk directory sandbox
-          tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "st-"));
-          const inputPath = path.join(tmpDir, "input.mp3");
+      // --- Step B: Multi-pass RSS feed resolution ---
+      await send({ type: "status", message: "Resolving RSS feed..." });
+      let rssFeedUrl: string | null = null;
+      const rssResult = await findRssFeed(metadata.showName, metadata.episodeTitle);
+      if (rssResult.found) {
+        rssFeedUrl = rssResult.feedUrl;
+        console.log("-> Parsed RSS URL:", rssFeedUrl);
+      } else if (rssResult.reason === "empty-results") {
+        await send({ type: "error", error: "Show could not be resolved via public directories (Potential Spotify Exclusive)." });
+        return;
+      } else if (rssResult.reason === "unknown-show") {
+        await send({ type: "error", error: "This episode could not be located in public directories and is likely a Spotify Exclusive show." });
+        return;
+      }
 
-          // 🧠 2. STREAM DOWN TO PHYSICAL DISK (Keeps RAM usage near zero)
-          console.log("-> Starting memory-isolated download stream to disk...");
-          await streamAudioToDisk(episode.enclosureUrl, inputPath);
-          audioFileProcessed = true;
+      // --- Step C: Match episode in RSS feed & download audio via safe disk stream ---
+      await send({ type: "status", message: "Downloading audio..." });
+      let audioFileProcessed = false;
+      let episodeFound = false;
+
+      if (rssFeedUrl) {
+        try {
+          const episode = await findEpisodeInFeed(rssFeedUrl, metadata.episodeTitle);
+          if (episode?.enclosureUrl) {
+            episodeFound = true;
+
+            // 1. Set up ephemeral disk directory sandbox
+            tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "st-"));
+            const inputPath = path.join(tmpDir, "input.mp3");
+
+            // 2. STREAM DOWN TO PHYSICAL DISK (Keeps RAM usage near zero)
+            console.log("-> Starting memory-isolated download stream to disk...");
+            await streamAudioToDisk(episode.enclosureUrl, inputPath);
+            audioFileProcessed = true;
+          }
+        } catch (err: any) {
+          rssFeedUrl = null;
         }
-      } catch (err: any) {
-        rssFeedUrl = null;
       }
-    }
 
-    if (!audioFileProcessed) {
-      const isExclusive = rssFeedUrl === null && !episodeFound ? " The show may be a Spotify Exclusive without a public RSS feed." : "";
-      return NextResponse.json({
-        error: "Could not locate or download the audio for this episode." + isExclusive,
-        detail: "Spotify Exclusive shows often don't syndicate via public RSS.",
-      }, { status: 404 });
-    }
+      if (!audioFileProcessed) {
+        const isExclusive = rssFeedUrl === null && !episodeFound ? " The show may be a Spotify Exclusive without a public RSS feed." : "";
+        await send({
+          type: "error",
+          error: "Could not locate or download the audio for this episode." + isExclusive,
+          detail: "Spotify Exclusive shows often don't syndicate via public RSS.",
+        });
+        return;
+      }
 
-    // --- Step E: OpenRouter Transcription (Memory-Safe Pooled Workers Loop) ---
-    let rawText: string;
-    const inputPath = path.join(tmpDir, "input.mp3");
+      // --- Step D: Split audio on disk ---
+      await send({ type: "status", message: "Processing audio segments..." });
+      const inputPath = path.join(tmpDir, "input.mp3");
 
-    // 🧠 1. Execute system binary audio division directly on disk
-    console.log("-> Splitting file segments directly via system execution binaries...");
-    const chunkPaths = await splitAudioIntoChunksOnDisk(inputPath, tmpDir);
-    const total = chunkPaths.length;
-    console.log(`-> Architecture split mapped into ${total} isolated segments`);
+      console.log("-> Splitting file segments directly via system execution binaries...");
+      const chunkPaths = await splitAudioIntoChunksOnDisk(inputPath, tmpDir);
+      const total = chunkPaths.length;
+      console.log(`-> Architecture split mapped into ${total} isolated segments`);
 
-    // 🧠 2. Pooled Worker Queue Loop: Evaluates workers concurrently up to exact capacity limits (3)
-    const transcripts: string[] = new Array(total);
-    for (let i = 0; i < total; i += MAX_CONCURRENT_TRANSCRIBERS) {
-      const slice = chunkPaths.slice(i, i + MAX_CONCURRENT_TRANSCRIBERS);
-      
-      await Promise.all(
-        slice.map(async (chunkPath, sliceIndex) => {
-          const globalIndex = i + sliceIndex;
-          console.log(`-> Spinning worker payload channel for segment index: ${globalIndex + 1}/${total}`);
-          // 🧠 Corrected call mapping arguments to line up exactly with type definitions
-          transcripts[globalIndex] = await transcribeChunk(chunkPath, globalIndex + 1, total);
-        })
-      );
-    }
+      // --- Emit chunk count so the frontend starts its countdown ---
+      await send({ type: "chunks", count: total });
 
-    rawText = transcripts.join("\n\n");
-    console.log("-> Stitched transcript:", rawText.length, "chars across", total, "chunks");
+      // --- Step E: OpenRouter Transcription (Memory-Safe Pooled Workers Loop) ---
+      const transcripts: string[] = new Array(total);
+      for (let i = 0; i < total; i += MAX_CONCURRENT_TRANSCRIBERS) {
+        const slice = chunkPaths.slice(i, i + MAX_CONCURRENT_TRANSCRIBERS);
 
-    // Clear disk space immediately after stitching strings
-    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => { });
+        await Promise.all(
+          slice.map(async (chunkPath, sliceIndex) => {
+            const globalIndex = i + sliceIndex;
+            console.log(`-> Spinning worker payload channel for segment index: ${globalIndex + 1}/${total}`);
+            transcripts[globalIndex] = await transcribeChunk(chunkPath, globalIndex + 1, total);
+          })
+        );
+      }
 
-    // --- Step F: Optional ad filtering ---
-    const openai = createOpenRouterClient();
-    let finalText = rawText;
-    let adFiltered = false;
+      const rawText = transcripts.join("\n\n");
+      console.log("-> Stitched transcript:", rawText.length, "chars across", total, "chunks");
 
-    if (filterAdsFlag) {
+      // Clear disk space immediately after stitching strings
+      await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => { });
+      tmpDir = "";
+
+      // --- Step F: Optional ad filtering ---
+      const openai = createOpenRouterClient();
+      let finalText = rawText;
+      let adFiltered = false;
+
+      if (filterAdsFlag) {
+        await send({ type: "status", message: "Filtering advertisements..." });
+        try {
+          const filtered = await filterAds(openai, rawText, []);
+          finalText = filtered.text;
+          adFiltered = true;
+        } catch {
+          adFiltered = false;
+        }
+      }
+
+      // --- Emit final result ---
+      await send({
+        type: "result",
+        data: {
+          metadata,
+          rssFeedUrl,
+          transcript: finalText,
+          segments: [],
+          adFiltered,
+        },
+      });
+    } catch (err: any) {
       try {
-        const filtered = await filterAds(openai, rawText, []);
-        finalText = filtered.text;
-        adFiltered = true;
-      } catch {
-        adFiltered = false;
-      }
+        await send({ type: "error", error: err?.message ?? "An unexpected error occurred." });
+      } catch { /* writer may already be closed */ }
+    } finally {
+      if (tmpDir) await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+      try { await writer.close(); } catch { /* stream already closed */ }
     }
+  })();
 
-    return NextResponse.json({
-      metadata,
-      rssFeedUrl,
-      transcript: finalText,
-      segments: [],
-      adFiltered,
-    });
-  } catch (err: any) {
-    if (tmpDir) await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
-    return NextResponse.json({ error: err?.message ?? "An unexpected error occurred." }, { status: 500 });
-  }
+  return new Response(stream.readable, {
+    headers: {
+      "Content-Type": "text/plain",
+      "Cache-Control": "no-cache",
+    },
+  });
 }

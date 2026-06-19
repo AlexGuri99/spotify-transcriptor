@@ -45,11 +45,7 @@ interface TranscriptionResult {
 
 type Status =
   | { phase: "idle" }
-  | { phase: "scraping"; message: string }
-  | { phase: "resolving-rss"; message: string }
-  | { phase: "downloading"; message: string }
-  | { phase: "transcribing"; message: string }
-  | { phase: "filtering"; message: string }
+  | { phase: "processing"; message: string; countdown: number | null }
   | { phase: "done" }
   | { phase: "error"; error: string; detail?: string };
 
@@ -102,7 +98,10 @@ export default function HomePage() {
 
     setResult(null);
     setActiveSegmentIndex(null);
-    setStatus({ phase: "scraping", message: "Fetching episode metadata from Spotify..." });
+    setStatus({ phase: "processing", message: "Starting...", countdown: null });
+
+    let countdownInterval: ReturnType<typeof setInterval> | null = null;
+    let gotResult = false;
 
     try {
       const res = await fetch("/api/transcribe", {
@@ -111,20 +110,77 @@ export default function HomePage() {
         body: JSON.stringify({ spotifyUrl: trimmed, filterAds }),
       });
 
-      const data = await res.json();
+      if (!res.body) throw new Error("Response body is empty");
 
-      if (!res.ok) {
-        setStatus({
-          phase: "error",
-          error: data.error ?? "Request failed",
-          detail: data.detail,
-        });
-        return;
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.trim()) continue;
+
+          try {
+            const parsed = JSON.parse(line);
+
+            if (parsed.type === "status") {
+              setStatus({ phase: "processing", message: parsed.message, countdown: null });
+            } else if (parsed.type === "chunks") {
+              const count: number = parsed.count;
+              const seconds = Math.ceil(count * 0.45) + 5;
+              setStatus({
+                phase: "processing",
+                message: `Estimated transcription ${seconds}s...`,
+                countdown: seconds,
+              });
+              if (countdownInterval) clearInterval(countdownInterval);
+              countdownInterval = setInterval(() => {
+                setStatus((prev) => {
+                  if (prev.phase !== "processing" || prev.countdown === null) return prev;
+                  const next = prev.countdown - 1;
+                  if (next <= 0) {
+                    if (countdownInterval) clearInterval(countdownInterval);
+                    return { ...prev, countdown: 0, message: "Estimated transcription 0s..." };
+                  }
+                  return { ...prev, countdown: next, message: `Estimated transcription ${next}s...` };
+                });
+              }, 1000);
+            } else if (parsed.type === "result") {
+              gotResult = true;
+              if (countdownInterval) clearInterval(countdownInterval);
+              setResult(parsed.data as TranscriptionResult);
+              setStatus({ phase: "done" });
+            } else if (parsed.type === "error") {
+              gotResult = true;
+              if (countdownInterval) clearInterval(countdownInterval);
+              setStatus({
+                phase: "error",
+                error: parsed.error,
+                detail: parsed.detail,
+              });
+            }
+          } catch {
+            // Skip malformed lines
+          }
+        }
       }
 
-      setResult(data as TranscriptionResult);
-      setStatus({ phase: "done" });
+      if (!gotResult) {
+        if (countdownInterval) clearInterval(countdownInterval);
+        setStatus({
+          phase: "error",
+          error: "Connection closed before transcription completed.",
+        });
+      }
     } catch (err: any) {
+      if (countdownInterval) clearInterval(countdownInterval);
       setStatus({
         phase: "error",
         error: err?.message ?? "Network error — is the server running?",
@@ -145,19 +201,10 @@ export default function HomePage() {
 
   /* -------- Derived state -------- */
 
-  const isLoading =
-    status.phase === "scraping" ||
-    status.phase === "resolving-rss" ||
-    status.phase === "downloading" ||
-    status.phase === "transcribing" ||
-    status.phase === "filtering";
+  const isLoading = status.phase === "processing";
 
   const statusMessage =
-    status.phase === "scraping" || status.phase === "resolving-rss" ||
-      status.phase === "downloading" || status.phase === "transcribing" ||
-      status.phase === "filtering"
-      ? status.message
-      : null;
+    status.phase === "processing" ? status.message : null;
 
   return (
     <div className={`${editorialSerif.variable} ${transcriptSans.variable} font-serif min-h-screen bg-[#FDFDFD] text-[#111111] antialiased flex flex-col justify-between`}>
@@ -273,15 +320,13 @@ export default function HomePage() {
 
             {/* Right Column: Visual Preview Card matching Openlane grey pane */}
             {/* Right Column: Visual Preview Pane (Un-framed & Seamless) */}
-            <div className="hidden lg:flex items-center justify-end relative h-full max-h-[450px]">
-              <div className="relative w-full max-w-[420px] transform transition-transform duration-700 ease-out hover:scale-[1.02]">
-                <Image
-                  src={iphonePic}
-                  alt="Platform interface preview"
-                  className="w-full h-auto object-contain object-right bg-transparent mix-blend-multiply"
-                  priority
-                />
-              </div>
+            <div className="hidden lg:flex items-center justify-end">
+              <Image
+                src={iphonePic}
+                alt="Platform interface preview"
+                className="w-full max-w-[420px] h-auto mix-blend-multiply"
+                priority
+              />
             </div>
 
           </div>
@@ -294,59 +339,20 @@ export default function HomePage() {
             {/* Left Box: Fine-lined Editorial Info Module */}
             <div className="space-y-6">
               <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-[0_4px_24px_rgba(0,0,0,0.01)]">
-                <span className="font-sans text-[10px] font-bold uppercase tracking-widest text-gray-400">
+                <span className="font-sans text-[10px] font-bold tracking-widest text-gray-400">
                   Episode info
                 </span>
                 <h3 className="mt-3 text-xl font-bold leading-tight text-black">
                   {result.metadata.episodeTitle}
                 </h3>
-                <p className="mt-2 text-xs font-medium text-gray-400">
-                  ~ {result.metadata.showName}
-                </p>
-
-                {result.rssFeedUrl && (
-                  <div className="mt-6 border-t border-gray-100 pt-4">
-                    <span className="font-sans text-[10px] font-bold uppercase tracking-widest text-gray-400">
-                      Rss source
-                    </span>
-                    <a
-                      href={result.rssFeedUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="mt-2 block truncate font-mono text-xs text-gray-500 hover:text-black hover:underline"
-                    >
-                      {result.rssFeedUrl}
-                    </a>
-                  </div>
-                )}
-
-                <div className="mt-6 border-t border-gray-100 pt-4">
-                  <span className="font-sans mb-3 block text-[10px] font-bold uppercase tracking-widest text-gray-400">
-                    Stats analysis
-                  </span>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="rounded-xl border border-gray-100 bg-[#FAFABA]/70 p-3 text-center">
-                      <span className="text-[10px] font-mono font-bold text-gray-400">(*)</span>
-                      <p className="text-xl font-bold mt-1 text-black">
-                        {result.segments.length}
-                      </p>
-                      <span className="font-sans text-[9px] font-medium tracking-wider text-gray-400 block mt-0.5">
-                        Segments
-                      </span>
-                    </div>
-                    <div className="rounded-xl border border-gray-100 bg-[#F4F4F4] p-3 text-center">
-                      <span className="text-[10px] font-mono font-bold text-gray-400">(#)</span>
-                      <p className="text-xl font-bold mt-1 text-black">
-                        {result.segments.length > 0
-                          ? formatTime(result.segments[result.segments.length - 1].end)
-                          : "—"}
-                      </p>
-                      <span className="font-sans text-[9px] font-medium tracking-wider text-gray-400 block mt-0.5">
-                        Duration
-                      </span>
-                    </div>
-                  </div>
-                </div>
+                <a
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-sans mt-2 block truncate text-xs text-gray-400 hover:text-black hover:underline"
+                >
+                  View on Spotify →
+                </a>
               </div>
 
               {result.segments.length > 0 && (
