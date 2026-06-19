@@ -1,10 +1,18 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import iconAsset from "@/assets/icon.svg";
 
 export const metadata: Metadata = {
-  title: "Spotify Transcriptor",
-  description:
-    "Extract transcripts from Spotify podcast episodes using OpenRouter AI",
+  title: "Tranzkript",
+  description: "Extract transcripts from Spotify podcast episodes",
+  icons: {
+    icon: [
+      {
+        url: iconAsset.src,
+        type: "image/svg+xml",
+      },
+    ],
+  },
 };
 
 export default function RootLayout({

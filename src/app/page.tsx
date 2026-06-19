@@ -199,6 +199,15 @@ export default function HomePage() {
     }
   }
 
+  /* -------- Home reset -------- */
+
+  function handleResetHome() {
+    setUrl("");
+    setResult(null);
+    setActiveSegmentIndex(null);
+    setStatus({ phase: "idle" });
+  }
+
   /* -------- Derived state -------- */
 
   const isLoading = status.phase === "processing";
@@ -212,12 +221,12 @@ export default function HomePage() {
       {/* ---- Header Nav ---- */}
       <header className="border-b border-gray-100 bg-white/80 backdrop-blur-md px-8 py-5 sticky top-0 z-50">
         <div className="mx-auto flex max-w-6xl items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <Videotape className="h-6 w-6 text-black stroke-[1.5]" />
-            <span className="text-lg font-bold tracking-tight text-black">
+          <button onClick={handleResetHome} className="flex items-center gap-3 cursor-pointer">
+            <Videotape className="h-9 w-9 text-black stroke-[1.5]" />
+            <span className="font-serif text-2xl font-bold tracking-tight text-black">
               Tranzkript
             </span>
-          </div>
+          </button>
           <nav className="font-sans text-sm font-medium text-gray-500 flex items-center gap-8">
             <span className="cursor-not-allowed opacity-40">Features</span>
             <span className="cursor-not-allowed opacity-40">Api</span>
@@ -235,18 +244,12 @@ export default function HomePage() {
 
             {/* Left Box: Control Panel & Typography Hooks */}
             <div className="flex flex-col space-y-6">
-              <div>
-                <span className="font-sans inline-block rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs font-medium text-gray-600">
-                  Pristine transcription, concurrent
-                </span>
-              </div>
-
               <h1 className="text-4xl md:text-5xl font-bold italic tracking-tight leading-[1.1] text-black">
                 Podcast transcription, simplified.
               </h1>
 
               <p className="font-sans text-base leading-relaxed text-gray-500 max-w-xl">
-                Transform any public Spotify podcast episode into a pristine, searchable transcript — with optional AI-powered ad removal.
+                Transform any public Spotify podcast episode into a pristine, searchable transcript.
               </p>
 
               {/* Injected Interactive Form Layout */}
@@ -282,32 +285,15 @@ export default function HomePage() {
                     </button>
                   </div>
 
-                  <div className="flex items-center justify-between pt-1">
-                    <label className="font-sans flex cursor-pointer items-center gap-3 text-xs font-medium text-gray-400 transition-colors hover:text-gray-600">
-                      <div className="relative">
-                        <input
-                          type="checkbox"
-                          checked={filterAds}
-                          onChange={(e) => setFilterAds(e.target.checked)}
-                          disabled={isLoading}
-                          className="peer sr-only"
-                        />
-                        <div className="h-5 w-9 rounded-full bg-gray-200 transition-colors peer-checked:bg-black" />
-                        <div className="absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-all peer-checked:translate-x-4" />
-                      </div>
-                      <span>Enable AI ad-insertion filter</span>
-                    </label>
-
-                    {statusMessage && (
-                      <div className="font-mono text-xs text-gray-400 flex items-center gap-2">
-                        <span className="inline-block h-1.5 w-1.5 animate-ping rounded-full bg-black" />
-                        {statusMessage}
-                      </div>
-                    )}
-                  </div>
+                  {statusMessage && (
+                    <div className="font-mono text-xs text-gray-400 flex items-center gap-2 pt-2">
+                      <span className="inline-block h-1.5 w-1.5 animate-ping rounded-full bg-black" />
+                      {statusMessage}
+                    </div>
+                  )}
 
                   {status.phase === "error" && (
-                    <div className="font-sans mt-4 rounded-xl border border-red-100 bg-red-50/40 px-4 py-3.5">
+                    <div className="font-sans rounded-xl border border-red-100 bg-red-50/40 px-4 py-3.5">
                       <p className="text-xs font-medium text-red-600">{status.error}</p>
                       {status.detail && (
                         <p className="mt-1 text-[11px] text-red-400 leading-normal">{status.detail}</p>
