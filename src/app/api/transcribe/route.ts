@@ -7,9 +7,11 @@ import fsSync from "fs";
 import * as fs from "fs/promises";
 import * as path from "path";
 import * as os from "os";
+import { Readable } from "stream";
+import { finished } from "stream/promises";
 
 /* ------------------------------------------------------------------ */
-/*  Types                                                             */
+/* Types                                                             */
 /* ------------------------------------------------------------------ */
 
 interface ScrapedMetadata {
@@ -42,7 +44,7 @@ interface ErrorResponse {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Helpers                                                            */
+/* Configs & Constants                                               */
 /* ------------------------------------------------------------------ */
 
 const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
@@ -50,8 +52,11 @@ const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
 /** Maximum binary size before we split into chunks (4 MB — Base64 expansion + safety margin). */
 const CHUNK_SIZE_BYTES = 1 * 1024 * 1024;
 
-/** Duration of each audio chunk in seconds (3 minutes — keeps Base64 payload under 8 MB). */
+/** Duration of each audio chunk in seconds (30 seconds — keeps Base64 payload small). */
 const CHUNK_DURATION_SECONDS = 30;
+
+/** 🔒 CRITICAL CONCURRENCY LIMIT: Process only 3 at a time to stay under 512MB RAM on Render */
+const MAX_CONCURRENT_TRANSCRIBERS = 3; 
 
 /** Build the OpenAI-compatible client pointed at OpenRouter. */
 function createOpenRouterClient() {
@@ -78,8 +83,6 @@ const EPISODE_ID_RE = /\/episode\/([a-zA-Z0-9]{22})/;
 /**
  * Aggressively strip symbols, numbers, and attribution patterns so the
  * iTunes Search API receives a clean alphabetical query.
- *   Input:  "Vikings #495 – Ragnar the Berserkers of Valhalla - Lars Brownworth"
- *   Output: "Vikings Ragnar the Berserkers of Valhalla Lars Brownworth"
  */
 function cleanSearchQuery(title: string): string {
   return title
@@ -92,69 +95,49 @@ function cleanSearchQuery(title: string): string {
     .trim();
 }
 
-/** Fetch metadata via Spotify's public oEmbed endpoint (open, unauthenticated, pure JSON). */
-async function scrapeSpotifyEpisode(
-  url: string
-): Promise<ScrapedMetadata | null> {
-  // 1) Extract the 22-character episode ID from the user's URL.
+/** Fetch metadata via Spotify's public oEmbed endpoint. */
+async function scrapeSpotifyEpisode(url: string): Promise<ScrapedMetadata | null> {
   const idMatch = url.match(EPISODE_ID_RE);
   if (!idMatch) {
     throw new Error(
-      "Could not extract a valid episode ID from the URL. " +
-      "Expected format: https://open.spotify.com/episode/22charId"
+      "Could not extract a valid episode ID from the URL. Expected format: /episode/[22_chars]"
     );
   }
 
-  // 2) Fetch Spotify's public oEmbed endpoint — no auth, no bot-blocking.
   const oembedUrl = `https://open.spotify.com/oembed?url=${encodeURIComponent(url)}`;
   const res = await fetch(oembedUrl, {
-    headers: {
-      Accept: "application/json",
-    },
+    headers: { Accept: "application/json" },
   });
 
   if (!res.ok) {
-    throw new Error(
-      `Spotify oEmbed returned HTTP ${res.status}. The episode ID may be invalid.`
-    );
+    throw new Error(`Spotify oEmbed returned HTTP ${res.status}.`);
   }
 
   const data: any = await res.json();
   console.log("-> oEmbed raw response:", JSON.stringify(data, null, 2));
 
-  // 3) Split the oEmbed title to extract episode + show name.
-  //    Typical format: "Episode Name – Show Name"
   const rawTitle: string = data?.title?.trim() ?? "";
   const authorName: string = data?.author_name?.trim() ?? "";
 
-  if (!rawTitle) {
-    console.log("-> Scraped Title: (none) — oEmbed returned no title");
-    return null;
-  }
+  if (!rawTitle) return null;
 
   let episodeTitle: string;
   let showName: string;
 
-  // Guard: if the title starts with an index prefix (Hebrew "פרק", "Ep", "Episode"),
-  // do NOT split — pass the full title as the search term.
   const hasIndexPrefix = /^(?:פרק\s|Ep[\s.]|Episode\s)/i.test(rawTitle);
-
-  // Only split on a clean dash delimiter when no index prefix is present.
   const dashMatch = rawTitle.match(/^(.+?)\s+[-–—]\s+(.+)$/);
+  
   if (dashMatch && !hasIndexPrefix) {
     episodeTitle = dashMatch[1].trim();
     showName = dashMatch[2].trim();
     console.log("-> Split by dash — episode:", episodeTitle, "| show:", showName);
   } else {
-    // No valid delimiter — keep the full title intact for iTunes searching.
     episodeTitle = rawTitle;
     showName = authorName || "Unknown Show";
     console.log("-> Using full title — episode:", episodeTitle, "| show hint:", showName);
   }
 
-  if (!showName) {
-    showName = "Unknown Show";
-  }
+  if (!showName) showName = "Unknown Show";
 
   console.log("-> Final — episodeTitle:", episodeTitle, "| showName:", showName);
   return { episodeTitle, showName };
@@ -165,19 +148,13 @@ type RssFeedResult =
   | { found: false; reason: "empty-results" | "no-match" | "unknown-show" };
 
 /** Multi-pass iTunes search: episode-title first, then fall back to show-name lookup. */
-async function findRssFeed(
-  showName: string,
-  episodeTitle?: string
-): Promise<RssFeedResult> {
-  // --- Pass 1: Search by the full oEmbed title (podcastEpisode may carry feedUrl). ---
+async function findRssFeed(showName: string, episodeTitle?: string): Promise<RssFeedResult> {
   if (episodeTitle) {
     const cleanedEp = cleanSearchQuery(episodeTitle);
     console.log("-> iTunes Episode Query:", cleanedEp);
 
     const epRes = await fetch(
-      `https://itunes.apple.com/search?term=${encodeURIComponent(
-        cleanedEp
-      )}&entity=podcastEpisode&limit=5`,
+      `https://itunes.apple.com/search?term=${encodeURIComponent(cleanedEp)}&entity=podcastEpisode&limit=5`,
       { headers: { Accept: "application/json" } }
     );
 
@@ -185,7 +162,6 @@ async function findRssFeed(
       const epData: any = await epRes.json();
       console.log("-> iTunes Episode Results:", epData.results?.length);
       if (epData.results?.length) {
-        // Return the first result that carries a feedUrl (regardless of entity type).
         for (const r of epData.results) {
           if (r.feedUrl) {
             console.log("-> Found feedUrl via episode search:", r.feedUrl);
@@ -200,21 +176,17 @@ async function findRssFeed(
     }
   }
 
-  // Guard: if showName is still the fallback string or blank, do NOT search for it.
   const isUnknownShow = !showName || /^unknown\s*show$/i.test(showName);
   if (isUnknownShow) {
     console.log("-> Show name is unknown — skipping fallback search.");
     return { found: false, reason: "unknown-show" };
   }
 
-  // --- Pass 2: Fall back to show-name search (entity=podcast). ---
   const cleanedName = cleanSearchQuery(showName);
   console.log("-> iTunes Show Query:", cleanedName);
 
   const showRes = await fetch(
-    `https://itunes.apple.com/search?term=${encodeURIComponent(
-      cleanedName
-    )}&entity=podcast&limit=5`,
+    `https://itunes.apple.com/search?term=${encodeURIComponent(cleanedName)}&entity=podcast&limit=5`,
     { headers: { Accept: "application/json" } }
   );
 
@@ -222,44 +194,31 @@ async function findRssFeed(
 
   const data: any = await showRes.json();
   console.log("-> iTunes Show Results:", data.results?.length);
-  if (!data.results?.length)
-    return { found: false, reason: "empty-results" };
+  if (!data.results?.length) return { found: false, reason: "empty-results" };
 
-  // Prefer a result whose collectionName closely matches.
   const normalizedTarget = cleanedName.toLowerCase().replace(/[^a-z0-9]/g, "");
   for (const r of data.results) {
-    const candidate = (r.collectionName ?? "")
-      .toLowerCase()
-      .replace(/[^a-z0-9]/g, "");
+    const candidate = (r.collectionName ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
     if (r.feedUrl && candidate.includes(normalizedTarget)) {
       return { found: true, feedUrl: r.feedUrl, feedTitle: r.collectionName };
     }
   }
 
-  // Fallback: return the first result that has a feedUrl.
   const first = data.results.find((r: any) => r.feedUrl);
-  if (first)
-    return { found: true, feedUrl: first.feedUrl, feedTitle: first.collectionName };
+  if (first) return { found: true, feedUrl: first.feedUrl, feedTitle: first.collectionName };
 
   return { found: false, reason: "no-match" };
 }
 
-/** Normalize title: lowercase, strip punctuation/emojis, collapse whitespace. */
 function sanitizeTitle(title: string): string {
-  return title
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
+  return title.toLowerCase().replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim();
 }
 
-/** Extract a numeric episode identifier (e.g. "#42", "Episode 13", "Ep. 7"). */
 function extractEpisodeNumber(title: string): string | null {
   const m = title.match(/(?:#|ep(?:isode)?\.?\s*)(\d+)/i);
   return m ? m[1] : null;
 }
 
-/** Compute word-overlap ratio between two pre-sanitized strings. */
 function wordOverlapRatio(a: string, b: string): number {
   const wa = a.split(/\s+/).filter(Boolean);
   const wb = b.split(/\s+/).filter(Boolean);
@@ -269,15 +228,11 @@ function wordOverlapRatio(a: string, b: string): number {
 }
 
 /** Parse the RSS XML and locate the episode with a matching title. */
-async function findEpisodeInFeed(
-  feedUrl: string,
-  episodeTitle: string
-): Promise<RssEpisode | null> {
+async function findEpisodeInFeed(feedUrl: string, episodeTitle: string): Promise<RssEpisode | null> {
   const parser = new Parser({
     timeout: 15_000,
     headers: {
-      "User-Agent":
-        "Mozilla/5.0 (compatible; SpotifyTranscriptor/1.0; +https://github.com)",
+      "User-Agent": "Mozilla/5.0 (compatible; SpotifyTranscriptor/1.0; +https://github.com)",
     },
   });
 
@@ -290,109 +245,54 @@ async function findEpisodeInFeed(
   let bestFallback: { item: any; score: number } | null = null;
 
   for (const item of feed.items) {
-    const itemTitle = [item.title, (item as any)["itunes:title"]]
-      .filter(Boolean)
-      .join(" ") || "";
+    const itemTitle = [item.title, (item as any)["itunes:title"]].filter(Boolean).join(" ") || "";
     const sanitizedItem = sanitizeTitle(itemTitle);
 
-    // 1) Primary: inclusion check on sanitized strings.
-    if (
-      sanitizedItem.includes(sanitizedTarget) ||
-      sanitizedTarget.includes(sanitizedItem)
-    ) {
+    if (sanitizedItem.includes(sanitizedTarget) || sanitizedTarget.includes(sanitizedItem)) {
       const enclosureUrl = item.enclosure?.url ?? item.link ?? null;
-      if (enclosureUrl) {
-        return { title: itemTitle, enclosureUrl };
-      }
+      if (enclosureUrl) return { title: itemTitle, enclosureUrl };
     }
 
-    // 2) Fallback: matching episode number (e.g. "#42", "Episode 13").
     if (targetEpNum) {
       const itemEpNum = extractEpisodeNumber(itemTitle);
       if (itemEpNum && itemEpNum === targetEpNum) {
         const enclosureUrl = item.enclosure?.url ?? item.link ?? null;
-        if (enclosureUrl) {
-          return { title: itemTitle, enclosureUrl };
-        }
+        if (enclosureUrl) return { title: itemTitle, enclosureUrl };
       }
     }
 
-    // 3) Track best word-overlap for ultimate fallback.
-    //    Tie-breaking: higher score wins; same score → newer isoDate wins.
     const score = wordOverlapRatio(sanitizedTarget, sanitizedItem);
-    if (
-      score > 0 &&
-      (!bestFallback ||
-        score > bestFallback.score ||
-        (score === bestFallback.score &&
-          (item.isoDate ?? "") > (bestFallback.item.isoDate ?? "")))
-    ) {
+    if (score > 0 && (!bestFallback || score > bestFallback.score || (score === bestFallback.score && (item.isoDate ?? "") > (bestFallback.item.isoDate ?? "")))) {
       bestFallback = { item, score };
     }
   }
 
-  // Ultimate fallback: return the best match above the threshold.
   if (bestFallback && bestFallback.score >= 0.45) {
-    const enclosureUrl =
-      bestFallback.item.enclosure?.url ?? bestFallback.item.link ?? null;
+    const enclosureUrl = bestFallback.item.enclosure?.url ?? bestFallback.item.link ?? null;
     if (enclosureUrl) {
-      return {
-        title: bestFallback.item.title ?? episodeTitle,
-        enclosureUrl,
-      };
+      return { title: bestFallback.item.title ?? episodeTitle, enclosureUrl };
     }
   }
 
-  // Log sample titles for debugging when no match is found.
   if (feed.items?.length) {
-    console.log(
-      "-> Sample RSS Titles in Feed:",
-      feed.items.slice(0, 3).map((i: any) => i.title)
-    );
+    console.log("-> Sample RSS Titles in Feed:", feed.items.slice(0, 3).map((i: any) => i.title));
   }
-
   return null;
 }
 
-/** Download an MP3 and return it as a Buffer. */
-async function downloadAudio(url: string): Promise<Buffer> {
-  const res = await fetch(url, {
-    headers: {
-      "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-    },
-  });
+/** 🧠 STREAM TO DISK SOLUTION: Bypasses RAM footprint completely for incoming master audio streams */
+async function streamAudioToDisk(url: string, destinationPath: string): Promise<void> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Failed to download audio (HTTP ${res.status})`);
+  if (!res.body) throw new Error("Audio download body response configuration is empty.");
 
-  if (!res.ok) {
-    throw new Error(
-      `Failed to download audio (HTTP ${res.status}). The audio file may be behind a login wall.`
-    );
-  }
-
-  const arrayBuffer = await res.arrayBuffer();
-  if (!arrayBuffer.byteLength) {
-    throw new Error("Downloaded audio file is empty.");
-  }
-
-  const buf = Buffer.from(arrayBuffer);
-  console.log("-> Downloaded audio:", `${(buf.length / 1024 / 1024).toFixed(1)} MB`);
-  return buf;
+  const fileStream = fsSync.createWriteStream(destinationPath);
+  await finished(Readable.fromWeb(res.body as any).pipe(fileStream));
 }
 
-/* ------------------------------------------------------------------ */
-/*  Chunking & Retry Helpers                                           */
-/* ------------------------------------------------------------------ */
-
-/** Split an audio buffer into 3-minute MP3 chunks via ffmpeg, returning file paths. */
-async function splitAudioIntoChunks(
-  inputBuffer: Buffer
-): Promise<{ chunkPaths: string[]; tmpDir: string }> {
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "st-"));
-  const inputPath = path.join(tmpDir, "input.mp3");
-
-  await fs.writeFile(inputPath, inputBuffer);
-
-  return new Promise<{ chunkPaths: string[]; tmpDir: string }>((resolve, reject) => {
+/** Split an audio file path into 30s MP3 fragments directly on disk via native system ffmpeg binaries */
+async function splitAudioIntoChunksOnDisk(inputPath: string, tmpDir: string): Promise<string[]> {
+  return new Promise<string[]>((resolve, reject) => {
     const outputPattern = path.join(tmpDir, "chunk_%03d.mp3");
 
     ffmpeg(inputPath)
@@ -408,14 +308,13 @@ async function splitAudioIntoChunks(
         try {
           const files = await fs.readdir(tmpDir);
           const chunkFiles = files.filter((f) => f.startsWith("chunk_")).sort();
-          const chunkPaths = chunkFiles.map((f) => path.join(tmpDir, f));
-          resolve({ chunkPaths, tmpDir });
+          resolve(chunkFiles.map((f) => path.join(tmpDir, f)));
         } catch (err) {
           reject(err);
         }
       })
       .on("error", (err) => {
-        fs.rm(tmpDir, { recursive: true, force: true }).catch(() => { });
+        fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
         reject(err);
       })
       .run();
@@ -423,25 +322,16 @@ async function splitAudioIntoChunks(
 }
 
 /** Transcribe a single chunk with retry; returns the text or a warning marker. */
-async function transcribeChunk(
-  openai: any, // We will use standard fetch instead of the client object here
-  chunkPath: string,
-  chunkIndex: number,
-  totalChunks: number
-): Promise<string> {
+async function transcribeChunk(chunkPath: string, chunkIndex: number, totalChunks: number): Promise<string> {
   const label = `Chunk ${chunkIndex}/${totalChunks}`;
 
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      // 1. Read the raw chunk binary into a node buffer
-      const buffer = fsSync.readFileSync(chunkPath);
-
-      // 2. Map it to a clean base64 data URI string scheme
+      const buffer = await fs.readFile(chunkPath);
       const rawBase64 = buffer.toString("base64");
 
       console.log(`-> Sending ${label} to OpenRouter via pure JSON Base64 string...`);
 
-      // 3. Post to the transcript endpoint as standard JSON text
       const response = await fetch("https://openrouter.ai/api/v1/audio/transcriptions", {
         method: "POST",
         headers: {
@@ -450,7 +340,6 @@ async function transcribeChunk(
         },
         body: JSON.stringify({
           model: "openai/whisper-large-v3-turbo",
-          // 🛑 Switch from flat 'file' property to OpenRouter's nested 'input_audio' signature block
           input_audio: {
             format: "mp3",
             data: rawBase64,
@@ -459,10 +348,7 @@ async function transcribeChunk(
       });
 
       const responseData = await response.json();
-
-      if (!response.ok) {
-        throw new Error(responseData?.error?.message || `HTTP ${response.status}`);
-      }
+      if (!response.ok) throw new Error(responseData?.error?.message || `HTTP ${response.status}`);
 
       const text = (responseData.text || "").trim();
       console.log(`-> ✅ ${label} transcribed (${text.length} chars)`);
@@ -476,46 +362,11 @@ async function transcribeChunk(
     }
   }
 
-  console.log(`-> ⚠️ ${label} failed after 3 attempts — inserting warning marker`);
   return `[⚠️ Audio segment unavailable — ${label}]`;
 }
 
-/** Transcribe audio via OpenRouter Whisper, returning full text + segments. */
-async function transcribeAudio(
-  openai: OpenAI,
-  audioBuffer: Buffer
-): Promise<{ text: string; segments: TranscriptSegment[] }> {
-  const audioFile = new File([new Uint8Array(audioBuffer)], "audio.mp3", {
-    type: "audio/mpeg",
-  });
-
-  const response = await openai.audio.transcriptions.create({
-    model: "openai/whisper-large-v3-turbo",
-    file: audioFile,
-    response_format: "verbose_json",
-    language: "en",
-  });
-
-  // With verbose_json the SDK returns an object that has .text and .segments.
-  const text = typeof response.text === "string" ? response.text : "";
-
-  const segments: TranscriptSegment[] = (
-    response as any
-  ).segments?.map((seg: any) => ({
-    start: Math.round(seg.start * 100) / 100,
-    end: Math.round(seg.end * 100) / 100,
-    text: seg.text?.trim() ?? "",
-  })) ?? [{ start: 0, end: 0, text }];
-
-  return { text, segments };
-}
-
 /** Pass the transcript through an LLM to strip sponsor/ad segments. */
-async function filterAds(
-  openai: OpenAI,
-  rawTranscript: string,
-  segments: TranscriptSegment[]
-): Promise<{ text: string; segments: TranscriptSegment[] }> {
+async function filterAds(openai: OpenAI, rawTranscript: string, segments: TranscriptSegment[]): Promise<{ text: string; segments: TranscriptSegment[] }> {
   const response = await openai.chat.completions.create({
     model: "openai/gpt-4o-mini",
     messages: [
@@ -532,80 +383,42 @@ async function filterAds(
           "- Return ONLY the cleaned transcript, no commentary or explanations.",
         ].join("\n"),
       },
-      {
-        role: "user",
-        content: rawTranscript,
-      },
+      { role: "user", content: rawTranscript },
     ],
     temperature: 0.1,
     max_tokens: 4096,
   });
 
   const cleaned = response.choices?.[0]?.message?.content?.trim();
+  if (!cleaned) return { text: rawTranscript, segments };
 
-  if (!cleaned) {
-    // If the LLM returned nothing unexpected, return the original.
-    return { text: rawTranscript, segments };
-  }
-
-  // Map the cleaned text back to segments heuristically — for display we
-  // preserve the original segments and note which ones were likely ads by
-  // checking which segment text appears in the cleaned version.
-  const cleanedSegments = segments
-    .filter((seg) => cleaned.includes(seg.text))
-    .map((seg) => ({ ...seg }));
-
-  // If filtering gutted everything (unlikely), return original with a note.
-  if (!cleanedSegments.length) {
-    return { text: rawTranscript, segments };
-  }
+  const cleanedSegments = segments.filter((seg) => cleaned.includes(seg.text)).map((seg) => ({ ...seg }));
+  if (!cleanedSegments.length) return { text: rawTranscript, segments };
 
   return { text: cleaned, segments: cleanedSegments };
 }
 
 /* ------------------------------------------------------------------ */
-/*  POST handler                                                       */
+/* POST handler                                                      */
 /* ------------------------------------------------------------------ */
 
-export async function POST(
-  req: NextRequest
-): Promise<NextResponse<SuccessResponse | ErrorResponse>> {
+export async function POST(req: NextRequest): Promise<NextResponse<SuccessResponse | ErrorResponse>> {
+  let tmpDir = "";
   try {
     const body = await req.json();
     const spotifyUrl: string | undefined = body.spotifyUrl;
     const filterAdsFlag: boolean = body.filterAds === true;
 
-    // --- Validate input ---
     if (!spotifyUrl || typeof spotifyUrl !== "string") {
-      return NextResponse.json(
-        { error: "Missing or invalid 'spotifyUrl' in request body." },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Missing or invalid 'spotifyUrl' in request body." }, { status: 400 });
     }
 
     const trimmedUrl = spotifyUrl.trim();
-    if (
-      !trimmedUrl.startsWith("https://open.spotify.com/") &&
-      !trimmedUrl.startsWith("http://open.spotify.com/")
-    ) {
-      return NextResponse.json(
-        { error: "Please provide a valid open.spotify.com URL." },
-        { status: 400 }
-      );
-    }
 
     // --- Step A: Scrape metadata ---
     const metadata = await scrapeSpotifyEpisode(trimmedUrl);
     if (!metadata) {
-      return NextResponse.json(
-        {
-          error:
-            "Could not find episode metadata on that Spotify page. " +
-            "Make sure it's a public podcast episode URL " +
-            "(e.g. https://open.spotify.com/episode/...).",
-        },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Could not find episode metadata on that Spotify page." }, { status: 400 });
     }
 
     // --- Step B: Multi-pass RSS feed resolution ---
@@ -615,113 +428,85 @@ export async function POST(
       rssFeedUrl = rssResult.feedUrl;
       console.log("-> Parsed RSS URL:", rssFeedUrl);
     } else if (rssResult.reason === "empty-results") {
-      return NextResponse.json(
-        {
-          error:
-            "Show could not be resolved via public directories " +
-            "(Potential Spotify Exclusive).",
-        },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: "Show could not be resolved via public directories (Potential Spotify Exclusive)." }, { status: 404 });
     } else if (rssResult.reason === "unknown-show") {
-      return NextResponse.json(
-        {
-          error:
-            "This episode could not be located in public directories " +
-            "and is likely a Spotify Exclusive show.",
-        },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: "This episode could not be located in public directories and is likely a Spotify Exclusive show." }, { status: 404 });
     }
 
-    // --- Step C: Match episode in RSS feed & download audio ---
-    let audioBuffer: Buffer | null = null;
+    // --- Step C: Match episode in RSS feed & download audio via safe disk stream ---
+    let audioFileProcessed = false;
     let episodeFound = false;
 
     if (rssFeedUrl) {
       try {
-        const episode = await findEpisodeInFeed(
-          rssFeedUrl,
-          metadata.episodeTitle
-        );
+        const episode = await findEpisodeInFeed(rssFeedUrl, metadata.episodeTitle);
         if (episode?.enclosureUrl) {
           episodeFound = true;
-          audioBuffer = await downloadAudio(episode.enclosureUrl);
+          
+          // 🧠 1. Set up ephemeral disk directory sandbox
+          tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "st-"));
+          const inputPath = path.join(tmpDir, "input.mp3");
+
+          // 🧠 2. STREAM DOWN TO PHYSICAL DISK (Keeps RAM usage near zero)
+          console.log("-> Starting memory-isolated download stream to disk...");
+          await streamAudioToDisk(episode.enclosureUrl, inputPath);
+          audioFileProcessed = true;
         }
       } catch (err: any) {
-        // RSS parsing or download failed — fall through gracefully.
         rssFeedUrl = null;
       }
     }
 
-    if (!audioBuffer) {
-      const isExclusive =
-        rssFeedUrl === null && !episodeFound
-          ? " The show may be a Spotify Exclusive without a public RSS feed."
-          : "";
-
-      return NextResponse.json(
-        {
-          error:
-            "Could not locate or download the audio for this episode." +
-            isExclusive,
-          detail:
-            "Spotify Exclusive shows often don't syndicate via public RSS." +
-            " Try requesting the episode directly from the show's official RSS feed.",
-        },
-        { status: 404 }
-      );
+    if (!audioFileProcessed) {
+      const isExclusive = rssFeedUrl === null && !episodeFound ? " The show may be a Spotify Exclusive without a public RSS feed." : "";
+      return NextResponse.json({
+        error: "Could not locate or download the audio for this episode." + isExclusive,
+        detail: "Spotify Exclusive shows often don't syndicate via public RSS.",
+      }, { status: 404 });
     }
 
-    // --- Step E: OpenRouter Transcription (with auto-chunking for large files) ---
-    const openai = createOpenRouterClient();
-
+    // --- Step E: OpenRouter Transcription (Memory-Safe Pooled Workers Loop) ---
     let rawText: string;
-    let segments: TranscriptSegment[];
+    const inputPath = path.join(tmpDir, "input.mp3");
 
-    if (audioBuffer.length <= CHUNK_SIZE_BYTES) {
-      // Small enough to send in one shot — original path.
-      const result = await transcribeAudio(openai, audioBuffer);
-      rawText = result.text;
-      segments = result.segments;
-      console.log("-> Single transcription done:", rawText.length, "chars");
-    } else {
-      // Large file — split into 3-minute chunks and transcribe concurrently.
-      const mb = (audioBuffer.length / 1024 / 1024).toFixed(1);
-      console.log(`-> Audio is ${mb} MB — splitting into 3-minute chunks...`);
+    // 🧠 1. Execute system binary audio division directly on disk
+    console.log("-> Splitting file segments directly via system execution binaries...");
+    const chunkPaths = await splitAudioIntoChunksOnDisk(inputPath, tmpDir);
+    const total = chunkPaths.length;
+    console.log(`-> Architecture split mapped into ${total} isolated segments`);
 
-      const { chunkPaths, tmpDir } = await splitAudioIntoChunks(audioBuffer);
-      const total = chunkPaths.length;
-      console.log(`-> Split into ${total} chunk(s) for concurrent transcription`);
-
-      const transcripts: string[] = await Promise.all(
-        chunkPaths.map((chunkPath, i) => {
-          const index = i + 1;
-          console.log(`-> Processing Chunk ${index}/${total}...`);
-          return transcribeChunk(openai, chunkPath, index, total);
+    // 🧠 2. Pooled Worker Queue Loop: Evaluates workers concurrently up to exact capacity limits (3)
+    const transcripts: string[] = new Array(total);
+    for (let i = 0; i < total; i += MAX_CONCURRENT_TRANSCRIBERS) {
+      const slice = chunkPaths.slice(i, i + MAX_CONCURRENT_TRANSCRIBERS);
+      
+      await Promise.all(
+        slice.map(async (chunkPath, sliceIndex) => {
+          const globalIndex = i + sliceIndex;
+          console.log(`-> Spinning worker payload channel for segment index: ${globalIndex + 1}/${total}`);
+          // 🧠 Corrected call mapping arguments to line up exactly with type definitions
+          transcripts[globalIndex] = await transcribeChunk(chunkPath, globalIndex + 1, total);
         })
       );
-
-      await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => { });
-
-      rawText = transcripts.join("\n\n");
-      segments = []; // Chunked mode loses per-word segment timing granularity.
-      console.log("-> Stitched transcript:", rawText.length, "chars across", total, "chunks");
     }
 
+    rawText = transcripts.join("\n\n");
+    console.log("-> Stitched transcript:", rawText.length, "chars across", total, "chunks");
+
+    // Clear disk space immediately after stitching strings
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => { });
+
     // --- Step F: Optional ad filtering ---
+    const openai = createOpenRouterClient();
     let finalText = rawText;
-    let finalSegments = segments;
     let adFiltered = false;
 
     if (filterAdsFlag) {
       try {
-        const filtered = await filterAds(openai, rawText, segments);
+        const filtered = await filterAds(openai, rawText, []);
         finalText = filtered.text;
-        finalSegments = filtered.segments;
         adFiltered = true;
       } catch {
-        // If the ad-filter call fails, serve the raw transcript.
         adFiltered = false;
       }
     }
@@ -730,15 +515,11 @@ export async function POST(
       metadata,
       rssFeedUrl,
       transcript: finalText,
-      segments: finalSegments,
+      segments: [],
       adFiltered,
     });
   } catch (err: any) {
-    const message = err?.message ?? "An unexpected error occurred.";
-    // Don't leak stack traces in production.
-    return NextResponse.json(
-      { error: message },
-      { status: 500 }
-    );
+    if (tmpDir) await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+    return NextResponse.json({ error: err?.message ?? "An unexpected error occurred." }, { status: 500 });
   }
 }
