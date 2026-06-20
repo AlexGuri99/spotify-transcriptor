@@ -325,10 +325,10 @@ export default function HomePage() {
             {/* Left Box: Fine-lined Editorial Info Module */}
             <div className="space-y-6">
               <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-[0_4px_24px_rgba(0,0,0,0.01)]">
-                <span className="font-sans text-[10px] font-bold tracking-widest text-gray-400">
+                <span className="font-[family-name:var(--font-barlow-condensed)] text-2xl font-bold text-black">
                   Episode info
                 </span>
-                <h3 className="mt-3 text-xl font-bold leading-tight text-black">
+                <h3 className="font-[family-name:var(--font-barlow-condensed)] text-xl font-bold text-gray-600">
                   {result.metadata.episodeTitle}
                 </h3>
                 <a
@@ -367,7 +367,7 @@ export default function HomePage() {
             {/* Right Box: Pristine Transcript Output Sheet */}
             <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-[0_4px_24px_rgba(0,0,0,0.01)] flex flex-col">
               <div className="mb-4 flex items-center justify-between border-b border-gray-100 pb-3">
-                <h2 className="text-lg font-bold text-black">
+                <h2 className="font-[family-name:var(--font-barlow-condensed)] text-2xl font-bold text-black">
                   Transcript document
                 </h2>
                 <button
