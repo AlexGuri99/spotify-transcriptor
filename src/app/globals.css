@@ -5,15 +5,17 @@
 @tailwind utilities;
 
 @layer base {
+  body, html, button, input, label, select, textarea {
+    font-family: var(--font-barlow-condensed), sans-serif !important;
+  }
   body {
     @apply bg-gray-950 text-gray-100 antialiased;
-    font-family: "PP Editorial New", serif;
   }
 }
 
 @layer utilities {
   .font-editorial {
-    font-family: "PP Editorial New", serif;
+    font-family: "PP Editorial New", serif !important;
   }
 }
 

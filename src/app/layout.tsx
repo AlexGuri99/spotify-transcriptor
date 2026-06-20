@@ -1,6 +1,28 @@
 import type { Metadata } from "next";
+import localFont from "next/font/local";
 import "./globals.css";
 import iconAsset from "@/assets/icon.svg";
+
+const barlowCondensed = localFont({
+  src: [
+    {
+      path: "../../font/BarlowCondensed-Regular.ttf",
+      weight: "400",
+      style: "normal",
+    },
+    {
+      path: "../../font/BarlowCondensed-Medium.ttf",
+      weight: "500",
+      style: "normal",
+    },
+    {
+      path: "../../font/BarlowCondensed-Bold.ttf",
+      weight: "700",
+      style: "normal",
+    },
+  ],
+  variable: "--font-barlow-condensed",
+});
 
 export const metadata: Metadata = {
   title: "Tranzkript",
@@ -21,7 +43,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="en" className={barlowCondensed.variable}>
       <body>{children}</body>
     </html>
   );

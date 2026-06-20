@@ -223,7 +223,7 @@ export default function HomePage() {
         <div className="mx-auto flex max-w-6xl items-center justify-between">
           <button onClick={handleResetHome} className="flex items-center gap-3 cursor-pointer">
             <Videotape className="h-9 w-9 text-black stroke-[1.5]" />
-            <span className="font-serif text-2xl font-bold tracking-tight text-black">
+            <span className="font-sans text-2xl font-bold tracking-tight text-black">
               Tranzkript
             </span>
           </button>
@@ -244,11 +244,11 @@ export default function HomePage() {
 
             {/* Left Box: Control Panel & Typography Hooks */}
             <div className="flex flex-col space-y-6">
-              <h1 className="text-4xl md:text-5xl font-bold italic tracking-tight leading-[1.1] text-black">
+              <h1 className={`text-4xl md:text-5xl font-bold italic tracking-tight leading-[1.1] text-black ${editorialSerif.className} font-editorial`}>
                 Podcast transcription, simplified.
               </h1>
 
-              <p className="font-sans text-base leading-relaxed text-gray-500 max-w-xl">
+              <p className="font-[family-name:var(--font-barlow-condensed)] text-base leading-relaxed text-gray-500 max-w-xl text-xl">
                 Transform any public Spotify podcast episode into a pristine, searchable transcript.
               </p>
 
@@ -352,8 +352,8 @@ export default function HomePage() {
                         key={segmentKey(seg, i)}
                         onClick={() => handleSegmentClick(i)}
                         className={`rounded-lg px-2.5 py-1 font-mono text-xs transition-colors ${activeSegmentIndex === i
-                            ? "bg-black text-white"
-                            : "bg-[#F5F5F5] text-gray-500 hover:bg-gray-200"
+                          ? "bg-black text-white"
+                          : "bg-[#F5F5F5] text-gray-500 hover:bg-gray-200"
                           }`}
                       >
                         {formatTime(seg.start)}
@@ -400,8 +400,8 @@ export default function HomePage() {
                       key={segmentKey(seg, i)}
                       onClick={() => handleSegmentClick(i)}
                       className={`flex w-full gap-4 rounded-xl px-3 py-2.5 text-left transition-all ${activeSegmentIndex === i
-                          ? "bg-[#FAFABA]/60 border-l-2 border-black"
-                          : "hover:bg-gray-50"
+                        ? "bg-[#FAFABA]/60 border-l-2 border-black"
+                        : "hover:bg-gray-50"
                         }`}
                     >
                       <span className="mt-0.5 shrink-0 font-mono text-xs font-bold text-gray-400">
