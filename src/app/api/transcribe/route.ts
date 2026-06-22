@@ -466,6 +466,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   const body = await req.json();
   const spotifyUrl: string | undefined = body.spotifyUrl;
   const filterAdsFlag: boolean = body.filterAds === true;
+  const startTime = Date.now();
 
   const encoder = new TextEncoder();
   const stream = new TransformStream();
@@ -602,6 +603,15 @@ export async function POST(req: NextRequest): Promise<Response> {
           adFiltered = false;
         }
       }
+
+      const elapsedSeconds = ((Date.now() - startTime) / 1000).toFixed(1);
+      const estimatedCost = total * 0.000333;
+      console.log(`==================================================`);
+      console.log(`🏁 PROCESSING COMPLETION METRICS`);
+      console.log(`⏱️ Total Execution Time: ${elapsedSeconds} seconds`);
+      console.log(`📦 Total Audio Chunks Processed: ${total}`);
+      console.log(`💰 Estimated OpenRouter Cost: $${estimatedCost.toFixed(6)}`);
+      console.log(`==================================================`);
 
       // --- Emit final result ---
       await send({
