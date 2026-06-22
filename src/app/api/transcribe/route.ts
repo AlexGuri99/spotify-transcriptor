@@ -139,17 +139,20 @@ async function scrapeSpotifyEpisode(url: string): Promise<ScrapedMetadata | null
 }
 
 type RssFeedResult =
-  | { found: true; feedUrl: string; feedTitle: string }
+  | { found: true; feedUrl: string; feedTitle: string; directAudioUrl?: string }
   | { found: false; reason: "empty-results" | "no-match" | "unknown-show" };
 
 /** Multi-pass iTunes search: episode-title first, then fall back to show-name lookup. */
-async function findRssFeed(showName: string, episodeTitle?: string): Promise<RssFeedResult> {
+async function findRssFeed(
+  showName: string,
+  episodeTitle?: string
+): Promise<RssFeedResult> {
   if (episodeTitle) {
     const cleanedEp = cleanSearchQuery(episodeTitle);
-    console.log("-> iTunes Episode Query:", cleanedEp);
+    console.log("-> 🎯 Querying iTunes Episodes:", cleanedEp);
 
     const epRes = await fetch(
-      `https://itunes.apple.com/search?term=${encodeURIComponent(cleanedEp)}&entity=podcastEpisode&limit=5`,
+      `https://itunes.apple.com/search?media=podcast&entity=podcastEpisode&term=${encodeURIComponent(cleanedEp)}&limit=10`,
       { headers: { Accept: "application/json" } }
     );
 
@@ -157,13 +160,75 @@ async function findRssFeed(showName: string, episodeTitle?: string): Promise<Rss
       const epData: any = await epRes.json();
       console.log("-> iTunes Episode Results:", epData.results?.length);
       if (epData.results?.length) {
+        const knownFalsePositives = ["trading secrets"];
+
+        // Score every result using title-overlap against the target episode,
+        // and skip known false-positive collections unless it's an exact match.
+        const scored: { result: any; score: number; exact: boolean }[] = [];
+
         for (const r of epData.results) {
-          if (r.feedUrl) {
-            console.log("-> Found feedUrl via episode search:", r.feedUrl);
+          const sanitizedTrack = sanitizeTitle(r.trackName ?? "");
+          const sanitizedTarget = sanitizeTitle(episodeTitle);
+          const score = wordOverlapRatio(sanitizedTarget, sanitizedTrack);
+          const exactMatch = sanitizedTrack === sanitizedTarget;
+
+          const collectionKey = (r.collectionName ?? "").toLowerCase().trim();
+          const isKnownFP = knownFalsePositives.some((fp) =>
+            collectionKey.includes(fp)
+          );
+
+          if (isKnownFP && !exactMatch) {
+            console.log(
+              "-> Skipping known false-positive — no exact match:",
+              r.collectionName,
+              r.trackName
+            );
+            continue;
+          }
+
+          scored.push({ result: r, score, exact: exactMatch });
+        }
+
+        if (scored.length) {
+          scored.sort((a, b) => b.score - a.score);
+
+          const best =
+            scored.find((s) => s.result.enclosureUrl ?? s.result.previewUrl) ??
+            scored.find((s) => s.result.feedUrl);
+
+          if (best) {
+            console.log(
+              "-> 🎯 Selected accurate podcast:",
+              best.result.collectionName ?? "",
+              "| track:",
+              best.result.trackName
+            );
+            const directAudioUrl =
+              best.result.enclosureUrl ?? best.result.previewUrl ?? null;
+            if (directAudioUrl) {
+              console.log(
+                "-> 🚀 Shortcut! Found direct audio stream link:",
+                directAudioUrl
+              );
+              console.log(
+                "-> Found feedUrl via episode search:",
+                best.result.feedUrl
+              );
+              return {
+                found: true,
+                feedUrl: best.result.feedUrl ?? "",
+                feedTitle: best.result.collectionName ?? "",
+                directAudioUrl,
+              };
+            }
+            console.log(
+              "-> Found feedUrl via episode search:",
+              best.result.feedUrl
+            );
             return {
               found: true,
-              feedUrl: r.feedUrl,
-              feedTitle: r.collectionName ?? "",
+              feedUrl: best.result.feedUrl,
+              feedTitle: best.result.collectionName ?? "",
             };
           }
         }
@@ -434,8 +499,8 @@ export async function POST(req: NextRequest): Promise<Response> {
       let rssFeedUrl: string | null = null;
       const rssResult = await findRssFeed(metadata.showName, metadata.episodeTitle);
       if (rssResult.found) {
-        rssFeedUrl = rssResult.feedUrl;
-        console.log("-> Parsed RSS URL:", rssFeedUrl);
+        rssFeedUrl = rssResult.feedUrl || null;
+        if (rssFeedUrl) console.log("-> Parsed RSS URL:", rssFeedUrl);
       } else if (rssResult.reason === "empty-results") {
         await send({ type: "error", error: "Show could not be resolved via public directories (Potential Spotify Exclusive)." });
         return;
@@ -449,7 +514,17 @@ export async function POST(req: NextRequest): Promise<Response> {
       let audioFileProcessed = false;
       let episodeFound = false;
 
-      if (rssFeedUrl) {
+      // Short-circuit: if the episode-level iTunes search returned a
+      // direct audio URL, skip RSS parsing and stream straight to disk.
+      const directAudioUrl = rssResult.found ? rssResult.directAudioUrl : undefined;
+      if (directAudioUrl) {
+        episodeFound = true;
+        tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "st-"));
+        const inputPath = path.join(tmpDir, "input.mp3");
+        console.log("-> Starting memory-isolated download stream to disk...");
+        await streamAudioToDisk(directAudioUrl, inputPath);
+        audioFileProcessed = true;
+      } else if (rssFeedUrl) {
         try {
           const episode = await findEpisodeInFeed(rssFeedUrl, metadata.episodeTitle);
           if (episode?.enclosureUrl) {
