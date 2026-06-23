@@ -418,25 +418,7 @@ export default function HomePage() {
           </div>
         )}
 
-        {/* Loading Shell matching layout grid boundaries */}
-        {isLoading && !result && (
-          <div className="grid flex-1 gap-8 lg:grid-cols-[340px_1fr] mt-4">
-            <div className="animate-pulse rounded-2xl border border-gray-200 bg-white p-6">
-              <div className="mb-4 h-3 w-16 rounded bg-gray-100" />
-              <div className="mb-2 h-6 w-3/4 rounded bg-gray-100" />
-              <div className="h-4 w-1/2 rounded bg-gray-100" />
-            </div>
-            <div className="animate-pulse rounded-2xl border border-gray-200 bg-white p-6">
-              <div className="mb-4 h-4 w-32 rounded bg-gray-100" />
-              <div className="space-y-3">
-                {Array.from({ length: 6 }).map((_, i) => (
-                  <div key={i} className="h-4 rounded bg-gray-100" style={{ width: `${70 + Math.random() * 25}%` }} />
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-      </main>
+              </main>
 
       {/* ---- Footer ---- */}
       <footer className="border-t border-gray-100 bg-white px-8 py-5 text-center font-sans text-[11px] font-medium text-gray-400">
