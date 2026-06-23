@@ -1,105 +1,99 @@
-# 🎵 Spotify Transcriptor
+# 🎙️ Tranzkript — Spotify Podcast Transcriptor
 
-An optimized, production-grade Next.js application that seamlessly resolves Spotify episode metadata, locates unencrypted public audio distribution feeds, and generates stitched text transcripts using high-concurrency processing pipelines via OpenRouter.
-
----
-
-## 🗺️ Interactive Architecture Flow
-
-When you paste a link into the dashboard and click **Extract & Transcribe**, the engine executes a multi-stage background lifecycle to bypass standard platform DRM and size barriers:
-
-```text
-[ User Pastes Spotify URL ]
-            │
-            ▼
-┌────────────────────────────────────────────────────────┐
-│ 1. Metadata Scraping (oEmbed API)                      │
-│ Parses 22-character ID ──► Fetches unauthenticated JSON│
-└───────────────────────┬────────────────────────────────┘
-                        │
-                        ▼ (Episode Title & Show Name Resolved)
-┌────────────────────────────────────────────────────────┐
-│ 2. Multi-Pass Feed Discovery (Apple iTunes Registry)    │
-│ Searches Directory ──► Matches Title ──► Sniffs MP3 URL│
-└───────────────────────┬────────────────────────────────┘
-                        │
-                        ▼ (Pristine Audio Stream Resolved)
-┌────────────────────────────────────────────────────────┐
-│ 3. Automated Local Downsampling (FFmpeg Engine)        │
-│ Downloads master audio ──► Cuts into 30-second fragments│
-└───────────────────────┬────────────────────────────────┘
-                        │
-                        ▼ (Generates Concurrent Disk Slices)
-┌────────────────────────────────────────────────────────┐
-│ 4. Pure JSON Payload Compilation (Base64 Serialization)│
-│ Read Sync ──► buffer.toString('base64') ──► Format MP3 │
-└───────────────────────┬────────────────────────────────┘
-                        │
-                        ▼ (Strict OpenRouter Schema Mapping)
-┌────────────────────────────────────────────────────────┐
-│ 5. Massive Async Worker Execution (OpenRouter Cloud)    │
-│ 79+ Threads ──► openai/whisper-large-v3-turbo ──► Text │
-└───────────────────────┬────────────────────────────────┘
-                        │
-                        ▼ (Zero Memory Failures / Zero Timeouts)
-┌────────────────────────────────────────────────────────┐
-│ 6. Text Stitching & Optional LLM Ad-Filtering          │
-│ Joins indexes ──► gpt-4o-mini Sponsor Strip ──► UI Display│
-└────────────────────────────────────────────────────────┘
-
-```
+> Paste a Spotify link. Get a pristine, searchable transcript. Zero bloat, maximum speed, pennies per episode.
 
 ---
 
-## ⚡ Key Engineering Solutions Implemented
+## 🚀 Overview
 
-* **Runtime Boundary Invariance**: Traditional Node.js form engines (`Undici` runtime) append dynamic multi-part boundaries (`----formdata-undici-...`) that cloud proxy gateways reject with `HTTP 400`. This app entirely bypasses form-data layers by transmitting audio blocks via clean text objects.
-* **Micro-Segment Ingestion**: High-fidelity podcast audio streams easily trip gateway payload firewalls. The backend programmatically splits incoming streams into **30-second fragments** using system-level `ffmpeg` binaries.
-* **OpenRouter Schema Compliance**: Slices are translated into raw Base64 character strings and wrapped inside a strictly structured JSON block that satisfies the explicit upstream type signature perfectly:
+**Tranzkript** is a lean, no-nonsense web application that transforms any public Spotify podcast episode into a clean, downloadable transcript. Built on Next.js 14, it stream-stitches through Spotify's oEmbed API, the iTunes Search directory, RSS feed resolution, and OpenRouter's Whisper large-v3-turbo engine — all inside a **sub-512MB RAM footprint** with aggressive disk-streaming to keep memory usage near zero.
 
-```json
-{
-  "model": "openai/whisper-large-v3-turbo",
-  "input_audio": {
-    "data": "UklGRiQAA...",
-    "format": "mp3"
-  }
-}
+**Why it's different:**
 
-```
-
-* **High-Concurrency Resilience**: Utilizes `Promise.all` to spin up dozens of isolated background workers simultaneously. Slices map cleanly across independent event loops with built-in exponential backoff loops to gracefully handle rate limit indicators without interrupting client response states.
+- **No audio files stored in RAM** — every byte streams directly to disk via Node.js pipe-to-filesystem.
+- **No expensive GPU required** — transcription runs on OpenRouter's serverless Whisper endpoint at $0.000333 per 30-second chunk.
+- **No bloated UI** — single-page hero with real-time NDJSON streaming status, no unnecessary loading skeletons.
+- **Ad-filtering mode** — optional LLM pass (GPT-4o-mini) strips sponsor reads and promotional content from the final transcript.
 
 ---
 
-## 🚀 Getting Started
+## 🛠️ Architecture Workflow
 
-### 1. Prerequisites
+                  ┌──────────────────────────────────────┐
+                  │        User pastes Spotify URL       │
+                  │   (e.g., /episode/22_alphanumeric)   │
+                  └────────────────┬─────────────────────┘
+                                   │ POST /api/transcribe
+                                   ▼
+          ┌────────────────────────────────────────────────┐
+          │  Step A:  oEmbed Metadata Retrieval            │
+          │                                                │
+          │  Extracts: episodeTitle + showName             │
+          │  Splits dash-delimited titles (e.g.,           │
+          │  "The Future of AI – Lex Fridman Podcast")     │
+          └────────────────────┬───────────────────────────┘
+                               ▼
+          ┌────────────────────────────────────────────────┐
+          │  Step B:  iTunes Search API — Multi-Pass       │
+          │                                                │
+          │  Pass 1:  Episode-level search                 │
+          │  [itunes.apple.com/search?entity=podcastEpisode](https://itunes.apple.com/search?entity=podcastEpisode) │
+          │    └─ Scores results by word-overlap ratio     │
+          │    └─ Filters known false-positive collections │
+          │    └─ Returns DIRECT_AUDIO_URL if available ───┼── ⚡ Shortcut
+          │                                                │
+          │  Pass 2:  Show-level fallback                  │
+          │  [itunes.apple.com/search?entity=podcast](https://itunes.apple.com/search?entity=podcast)        │
+          │    └─ Matches by normalized show name          │
+          │    └─ Extracts RSS feedUrl from result         │
+          └────────────────────┬───────────────────────────┘
+                               ▼ (feedUrl or direct audio)
+          ┌────────────────────────────────────────────────┐
+          │  Step C:  RSS Feed Parsing & Audio Download    │
+          │                                                │
+          │  If no direct URL:                             │
+          │    └─ Parse RSS XML via rss-parser             │
+          │    └─ Match episode title (sanitized compare)  │
+          │                                                │
+          │  ┌────────────────────────────────────────┐    │
+          │  │  🧠 STREAM TO DISK  (zero RAM)         │    │
+          │  │    → pipe(fs.createWriteStream)        │    │
+          │  │      → /tmp/st-XXXXX/input.mp3         │    │
+          │  └────────────────────────────────────────┘    │
+          └────────────────────┬───────────────────────────┘
+                               ▼
+          ┌────────────────────────────────────────────────┐
+          │  Step D:  ffmpeg Chunk Slicing (on disk)       │
+          │                                                │
+          │  ffmpeg -i input.mp3 -f segment                │
+          │    -segment_time 30 -c copy -map 0:a           │
+          │    → /tmp/st-XXXXX/chunk_001.mp3               │
+          └────────────────────┬───────────────────────────┘
+                               ▼
+          ┌────────────────────────────────────────────────┐
+          │  Step E:  Pooled Transcription Workers         │
+          │                                                │
+          │  ⚙️  MAX_CONCURRENT_TRANSCRIBERS = 3           │
+          │  Batch-processes chunks through OpenRouter     │
+          │  Whisper large-v3-turbo with exponential       │
+          │  backoff and 3x retry safety limits.           │
+          └────────────────────┬───────────────────────────┘
+                               ▼ (raw transcript string)
+          ┌────────────────────────────────────────────────┐
+          │  Step F:  (Optional) Ad Filtering & NDJSON     │
+          │                                                │
+          │  Stitches text, passes through GPT-4o-mini     │
+          │  to remove sponsors, and returns final payload │
+          └────────────────────────────────────────────────┘
 
-Ensure your system features a globally mapped, functional installation of `ffmpeg`:
+---
 
-```text
-ffmpeg -version
+## 📦 Core System Features
 
-```
-
-### 2. Environment Setup
-
-Create a `.env.local` file in your root project folder (automatically hidden from remote repository syncs via `.gitignore` rules):
-
-```text
-OPENROUTER_API_KEY=sk-or-v1-your-private-token-string
-
-```
-
-### 3. Initialize Dev Server
-
-Install the required node modules and fire up your local environment:
-
-```text
-npm install
-npm run dev
-
-```
-
-Open **`http://localhost:3000`** in your browser, paste your favorite track feed, and watch the asynchronous green checkmarks update your development log in real-time!
+| Feature | Primary Mechanism | Technical Resolution |
+| :--- | :--- | :--- |
+| **Memory Isolation** | `pipe-to-filesystem` | Downloads raw data straight to a distinct request workspace inside `/tmp/` using `Readable.fromWeb(res.body)`, keeping container heap usage under 200MB. |
+| **Concurrency Cap** | `MAX_CONCURRENT_TRANSCRIBERS = 3` | Handles audio decoding batch requests in chunks of 3 via a sliding-window array loop to guarantee server stability on thin tiers. |
+| **False-Positive Guard** | Array Scoring Matrix | Checks incoming iTunes payloads against a local collection filter and skips known ambiguous name duplicates using a `wordOverlapRatio` validator. |
+| **Dynamic Routing** | Token Extraction Helper | Extracts unique episode signatures directly from the URL path via regex and sanitizes punctuation strings before talking to Apple catalogs. |
+| **Streaming UI** | NDJSON Transform Pipelines | Writes progression lines chunk-by-chunk over a native `TransformStream` layer so the interface updates state values in real-time without polling hooks. |
