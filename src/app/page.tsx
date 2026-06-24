@@ -72,6 +72,7 @@ export default function HomePage() {
   const [url, setUrl] = useState("");
   const [filterAds, setFilterAds] = useState(false);
   const [showTimestamps, setShowTimestamps] = useState(true);
+  const [sourceMode, setSourceMode] = useState<"spotify" | "youtube" | "apple">("spotify");
   const [status, setStatus] = useState<Status>({ phase: "idle" });
   const [result, setResult] = useState<TranscriptionResult | null>(null);
   const [activeSegmentIndex, setActiveSegmentIndex] = useState<number | null>(
@@ -109,8 +110,19 @@ export default function HomePage() {
       const res = await fetch("/api/transcribe", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ spotifyUrl: trimmed, filterAds }),
+        body: JSON.stringify({ sourceMode, url: trimmed, filterAds }),
       });
+
+      if (!res.ok) {
+        let errorMsg = `Server error (HTTP ${res.status})`;
+        try {
+          const errBody = await res.json();
+          if (errBody.error) errorMsg = errBody.error;
+        } catch {}
+        if (countdownInterval) clearInterval(countdownInterval);
+        setStatus({ phase: "error", error: errorMsg });
+        return;
+      }
 
       if (!res.body) throw new Error("Response body is empty");
 
@@ -257,6 +269,37 @@ export default function HomePage() {
               {/* Injected Interactive Form Layout */}
               <div className="pt-2">
                 <form onSubmit={handleSubmit} className="space-y-4">
+                    {/* Source mode pills */}
+                    <div className="flex gap-2">
+                      {(["spotify", "youtube", "apple"] as const).map((mode) => {
+                        const activeColors: Record<string, string> = {
+                          spotify: "bg-[#1ED760] text-white border-[#1ED760]",
+                          youtube: "bg-[#FF0000] text-white border-[#FF0000]",
+                          apple: "bg-[#A370F7] text-white border-[#A370F7]",
+                        };
+                        const inactiveColors: Record<string, string> = {
+                          spotify: "bg-gray-50 text-gray-400 border-transparent hover:border-[#1ED760] hover:text-[#1ED760]",
+                          youtube: "bg-gray-50 text-gray-400 border-transparent hover:border-[#FF0000] hover:text-[#FF0000]",
+                          apple: "bg-gray-50 text-gray-400 border-transparent hover:border-[#A370F7] hover:text-[#A370F7]",
+                        };
+                        return (
+                          <button
+                            key={mode}
+                            type="button"
+                            onClick={() => setSourceMode(mode)}
+                            className={`font-sans rounded-full px-5 py-2 text-sm font-medium transition-all border ${
+                              sourceMode === mode ? activeColors[mode] : inactiveColors[mode]
+                            }`}
+                          >
+                            {mode === "spotify"
+                              ? "Spotify"
+                              : mode === "youtube"
+                                ? "YouTube"
+                                : "Apple Podcasts"}
+                          </button>
+                        );
+                      })}
+                    </div>
                   <div className="flex flex-col sm:flex-row gap-3">
                     <div className="flex-1">
                       <input
@@ -264,7 +307,13 @@ export default function HomePage() {
                         type="url"
                         value={url}
                         onChange={(e) => setUrl(e.target.value)}
-                        placeholder="Paste a Spotify episode URL..."
+                        placeholder={
+                          sourceMode === "spotify"
+                            ? "Paste a Spotify episode URL..."
+                            : sourceMode === "youtube"
+                              ? "Paste a YouTube video URL..."
+                              : "Paste an Apple Podcasts URL..."
+                        }
                         className="font-sans w-full rounded-xl border border-gray-200 bg-white px-4 py-3.5 text-sm text-[#111111] placeholder-gray-400 transition-all focus:border-black focus:outline-none focus:ring-1 focus:ring-black/10 disabled:opacity-50 shadow-[0_2px_8px_rgba(0,0,0,0.01)]"
                         disabled={isLoading}
                         autoFocus

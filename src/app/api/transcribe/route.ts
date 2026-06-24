@@ -75,6 +75,30 @@ function createOpenRouterClient() {
 /** Regex to extract the 22-character alphanumeric Spotify episode ID from a URL. */
 const EPISODE_ID_RE = /\/episode\/([a-zA-Z0-9]{22})/;
 
+/* ------------------------------------------------------------------ */
+/* Multi-platform URL detection                                       */
+/* ------------------------------------------------------------------ */
+
+const YOUTUBE_URL_RE = /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/;
+const APPLE_URL_RE = /podcasts\.apple\.com\/.*\/id(\d+)/;
+const APPLE_EPISODE_ID_RE = /[\?&]i=(\d+)/;
+
+function detectPlatform(url: string): "spotify" | "youtube" | "apple" | null {
+  if (EPISODE_ID_RE.test(url)) return "spotify";
+  if (YOUTUBE_URL_RE.test(url)) return "youtube";
+  if (APPLE_URL_RE.test(url)) return "apple";
+  return null;
+}
+
+function extractUrlId(url: string, mode: string): string | null {
+  switch (mode) {
+    case "spotify": return url.match(EPISODE_ID_RE)?.[1] ?? null;
+    case "youtube": return url.match(YOUTUBE_URL_RE)?.[1] ?? null;
+    case "apple": return url.match(APPLE_EPISODE_ID_RE)?.[1] ?? null;
+    default: return null;
+  }
+}
+
 /**
  * Aggressively strip symbols, numbers, and attribution patterns so the
  * iTunes Search API receives a clean alphabetical query.
@@ -465,33 +489,255 @@ async function filterAds(openai: OpenAI, rawTranscript: string, segments: Transc
 }
 
 /* ------------------------------------------------------------------ */
+/* Apple Podcasts resolution — iTunes lookup → direct audio URL       */
+/* ------------------------------------------------------------------ */
+
+interface AppleEpisodeInfo {
+  audioUrl: string;
+  episodeTitle: string;
+  showName: string;
+}
+
+async function resolveAppleEpisode(episodeId: string): Promise<AppleEpisodeInfo> {
+  const res = await fetch(
+    `https://itunes.apple.com/lookup?id=${episodeId}&entity=podcastEpisode`,
+    { headers: { Accept: "application/json" } }
+  );
+  if (!res.ok) throw new Error(`iTunes lookup returned HTTP ${res.status}`);
+  const data: any = await res.json();
+  const result = data.results?.[0];
+  if (!result) throw new Error("Episode not found on Apple Podcasts.");
+  const audioUrl = result.previewUrl ?? result.episodeUrl;
+  if (!audioUrl) throw new Error("No audio URL found for this Apple Podcasts episode.");
+  return {
+    audioUrl,
+    episodeTitle: result.trackName ?? "Unknown Episode",
+    showName: result.collectionName ?? "Unknown Show",
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* YouTube captions — extract native timed captions from video page   */
+/* ------------------------------------------------------------------ */
+
+interface YouTubeCaptionSegment {
+  start: number;
+  end: number;
+  text: string;
+}
+
+async function fetchYouTubeCaptions(videoId: string): Promise<{
+  episodeTitle: string;
+  showName: string;
+  segments: YouTubeCaptionSegment[];
+}> {
+  const pageRes = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
+    headers: {
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+    },
+  });
+  if (!pageRes.ok) throw new Error(`Failed to fetch YouTube page (HTTP ${pageRes.status})`);
+  const html = await pageRes.text();
+
+  // Extract video title and channel name
+  let episodeTitle = "Unknown Video";
+  let showName = "Unknown Channel";
+  const titleMatch = html.match(/<title>([^<]*)<\/title>/);
+  if (titleMatch) episodeTitle = titleMatch[1].replace(" - YouTube", "").trim();
+  const channelMatch = html.match(/"author":"([^"]+)"/);
+  if (channelMatch) showName = channelMatch[1];
+
+  // Extract caption tracks from ytInitialPlayerResponse
+  const playerMatch = html.match(/ytInitialPlayerResponse\s*=\s*({.*?});/);
+  if (!playerMatch) throw new Error("Could not extract player response from YouTube page.");
+  const playerData: any = JSON.parse(playerMatch[1]);
+  const captionTracks =
+    playerData?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+  if (!captionTracks?.length) throw new Error("No captions available for this YouTube video.");
+
+  // Prefer English, fall back to first available track
+  const track =
+    captionTracks.find((t: any) => t.languageCode?.startsWith("en")) ?? captionTracks[0];
+  const captionsUrl: string = track.baseUrl;
+
+  const captionsRes = await fetch(captionsUrl);
+  if (!captionsRes.ok) throw new Error(`Failed to fetch captions (HTTP ${captionsRes.status})`);
+  const captionsXml = await captionsRes.text();
+
+  // Parse XML <text> elements with start / dur attributes
+  const segments: YouTubeCaptionSegment[] = [];
+  const textRe = /<text start="([\d.]+)" dur="([\d.]*)"[^>]*>([\s\S]*?)<\/text>/g;
+  let m: RegExpExecArray | null;
+  while ((m = textRe.exec(captionsXml)) !== null) {
+    const start = parseFloat(m[1]);
+    const dur = m[2] ? parseFloat(m[2]) : 2;
+    const text = m[3]
+      .replace(/<[^>]+>/g, "")
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, "\"")
+      .replace(/&#39;/g, "'")
+      .trim();
+    if (text) segments.push({ start, end: start + dur, text });
+  }
+
+  if (!segments.length) throw new Error("No caption text found.");
+  return { episodeTitle, showName, segments };
+}
+
+/* ------------------------------------------------------------------ */
 /* POST handler — streaming NDJSON response                           */
 /* ------------------------------------------------------------------ */
 
 export async function POST(req: NextRequest): Promise<Response> {
   const body = await req.json();
-  const spotifyUrl: string | undefined = body.spotifyUrl;
+  const sourceMode: string = body.sourceMode ?? "spotify";
+  const inputUrl: string | undefined = body.url;
   const filterAdsFlag: boolean = body.filterAds === true;
   const startTime = Date.now();
 
+  // --- URL validation: run before streaming to return a clean HTTP 400 ---
+  if (!inputUrl || typeof inputUrl !== "string" || !inputUrl.trim()) {
+    return Response.json(
+      { type: "error", error: "Missing or invalid URL in request body." },
+      { status: 400 }
+    );
+  }
+  const trimmedUrl = inputUrl.trim();
+  const actualPlatform = detectPlatform(trimmedUrl);
+  if (!actualPlatform) {
+    return Response.json(
+      { type: "error", error: "Could not recognize the URL format. Please check the link and try again." },
+      { status: 400 }
+    );
+  }
+  if (actualPlatform !== sourceMode) {
+    const modeLabels: Record<string, string> = {
+      spotify: "Spotify Podcasts",
+      youtube: "YouTube",
+      apple: "Apple Podcasts",
+    };
+    return Response.json(
+      {
+        type: "error",
+        error: `You selected ${modeLabels[sourceMode]}, but pasted a ${modeLabels[actualPlatform]} link. Please switch tabs.`,
+      },
+      { status: 400 }
+    );
+  }
+
+  // --- Proceed with streaming NDJSON ---
   const encoder = new TextEncoder();
   const stream = new TransformStream();
   const writer = stream.writable.getWriter();
 
-  // Convenience helper: write a JSON line to the stream
   const send = (data: Record<string, unknown>) =>
     writer.write(encoder.encode(JSON.stringify(data) + "\n"));
 
-  // All processing runs in the background; Response is returned immediately
   (async () => {
     let tmpDir = "";
     try {
-      if (!spotifyUrl || typeof spotifyUrl !== "string") {
-        await send({ type: "error", error: "Missing or invalid 'spotifyUrl' in request body." });
+      /* ---------------------------------------------------------------- */
+      /* YOUTUBE — captions-only path, no audio transcoding               */
+      /* ---------------------------------------------------------------- */
+      if (sourceMode === "youtube") {
+        await send({ type: "status", message: "Fetching YouTube captions..." });
+        const videoId = extractUrlId(trimmedUrl, "youtube")!;
+        const { episodeTitle, showName, segments } = await fetchYouTubeCaptions(videoId);
+        const transcript = segments.map((s) => s.text).join("\n");
+        const metadata: ScrapedMetadata = { episodeTitle, showName };
+        const elapsedSeconds = ((Date.now() - startTime) / 1000).toFixed(1);
+
+        await send({ type: "chunks", count: segments.length });
+        await send({
+          type: "result",
+          data: {
+            metadata,
+            rssFeedUrl: null,
+            transcript,
+            segments,
+            adFiltered: false,
+            executionTime: Number(elapsedSeconds),
+          },
+        });
         return;
       }
 
-      const trimmedUrl = spotifyUrl.trim();
+      /* ---------------------------------------------------------------- */
+      /* APPLE — iTunes lookup → direct audio stream → transcribe         */
+      /* ---------------------------------------------------------------- */
+      if (sourceMode === "apple") {
+        await send({ type: "status", message: "Resolving Apple Podcasts episode..." });
+        const episodeId = extractUrlId(trimmedUrl, "apple")!;
+        const appleInfo = await resolveAppleEpisode(episodeId);
+        const metadata: ScrapedMetadata = {
+          episodeTitle: appleInfo.episodeTitle,
+          showName: appleInfo.showName,
+        };
+
+        await send({ type: "status", message: "Downloading audio..." });
+        tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "st-"));
+        const inputPath = path.join(tmpDir, "input.mp3");
+        await streamAudioToDisk(appleInfo.audioUrl, inputPath);
+
+        await send({ type: "status", message: "Processing audio segments..." });
+        const chunkPaths = await splitAudioIntoChunksOnDisk(inputPath, tmpDir);
+        const total = chunkPaths.length;
+        await send({ type: "chunks", count: total });
+
+        const transcripts: string[] = new Array(total);
+        for (let i = 0; i < total; i += MAX_CONCURRENT_TRANSCRIBERS) {
+          const slice = chunkPaths.slice(i, i + MAX_CONCURRENT_TRANSCRIBERS);
+          await Promise.all(
+            slice.map(async (chunkPath, sliceIndex) => {
+              const globalIndex = i + sliceIndex;
+              transcripts[globalIndex] = await transcribeChunk(chunkPath, globalIndex + 1, total);
+            })
+          );
+        }
+
+        const rawText = transcripts.join("\n\n");
+        await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+        tmpDir = "";
+
+        let finalText = rawText;
+        let adFiltered = false;
+        if (filterAdsFlag) {
+          const openai = createOpenRouterClient();
+          await send({ type: "status", message: "Filtering advertisements..." });
+          try {
+            const filtered = await filterAds(openai, rawText, []);
+            finalText = filtered.text;
+            adFiltered = true;
+          } catch {
+            adFiltered = false;
+          }
+        }
+
+        const elapsedSeconds = ((Date.now() - startTime) / 1000).toFixed(1);
+        await send({
+          type: "result",
+          data: {
+            metadata,
+            rssFeedUrl: null,
+            transcript: finalText,
+            segments: transcripts.map((text, i) => ({
+              start: i * CHUNK_DURATION_SECONDS,
+              end: (i + 1) * CHUNK_DURATION_SECONDS,
+              text,
+            })),
+            adFiltered,
+            executionTime: Number(elapsedSeconds),
+          },
+        });
+        return;
+      }
+
+      /* ---------------------------------------------------------------- */
+      /* SPOTIFY (default) — oEmbed → RSS → audio → transcribe           */
+      /* ---------------------------------------------------------------- */
 
       // --- Step A: Scrape metadata ---
       await send({ type: "status", message: "Fetching episode metadata..." });
@@ -521,8 +767,6 @@ export async function POST(req: NextRequest): Promise<Response> {
       let audioFileProcessed = false;
       let episodeFound = false;
 
-      // Short-circuit: if the episode-level iTunes search returned a
-      // direct audio URL, skip RSS parsing and stream straight to disk.
       const directAudioUrl = rssResult.found ? rssResult.directAudioUrl : undefined;
       if (directAudioUrl) {
         episodeFound = true;
@@ -536,12 +780,8 @@ export async function POST(req: NextRequest): Promise<Response> {
           const episode = await findEpisodeInFeed(rssFeedUrl, metadata.episodeTitle);
           if (episode?.enclosureUrl) {
             episodeFound = true;
-
-            // 1. Set up ephemeral disk directory sandbox
             tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "st-"));
             const inputPath = path.join(tmpDir, "input.mp3");
-
-            // 2. STREAM DOWN TO PHYSICAL DISK (Keeps RAM usage near zero)
             console.log("-> Starting memory-isolated download stream to disk...");
             await streamAudioToDisk(episode.enclosureUrl, inputPath);
             audioFileProcessed = true;
@@ -552,7 +792,9 @@ export async function POST(req: NextRequest): Promise<Response> {
       }
 
       if (!audioFileProcessed) {
-        const isExclusive = rssFeedUrl === null && !episodeFound ? " The show may be a Spotify Exclusive without a public RSS feed." : "";
+        const isExclusive = rssFeedUrl === null && !episodeFound
+          ? " The show may be a Spotify Exclusive without a public RSS feed."
+          : "";
         await send({
           type: "error",
           error: "Could not locate or download the audio for this episode." + isExclusive,
@@ -561,23 +803,18 @@ export async function POST(req: NextRequest): Promise<Response> {
         return;
       }
 
-      // --- Step D: Split audio on disk ---
+      // --- Steps D–F: split, transcribe, filter (shared with Apple path) ---
       await send({ type: "status", message: "Processing audio segments..." });
       const inputPath = path.join(tmpDir, "input.mp3");
-
       console.log("-> Splitting file segments directly via system execution binaries...");
       const chunkPaths = await splitAudioIntoChunksOnDisk(inputPath, tmpDir);
       const total = chunkPaths.length;
       console.log(`-> Architecture split mapped into ${total} isolated segments`);
-
-      // --- Emit chunk count so the frontend starts its countdown ---
       await send({ type: "chunks", count: total });
 
-      // --- Step E: OpenRouter Transcription (Memory-Safe Pooled Workers Loop) ---
       const transcripts: string[] = new Array(total);
       for (let i = 0; i < total; i += MAX_CONCURRENT_TRANSCRIBERS) {
         const slice = chunkPaths.slice(i, i + MAX_CONCURRENT_TRANSCRIBERS);
-
         await Promise.all(
           slice.map(async (chunkPath, sliceIndex) => {
             const globalIndex = i + sliceIndex;
@@ -589,16 +826,12 @@ export async function POST(req: NextRequest): Promise<Response> {
 
       const rawText = transcripts.join("\n\n");
       console.log("-> Stitched transcript:", rawText.length, "chars across", total, "chunks");
-
-      // Clear disk space immediately after stitching strings
-      await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => { });
+      await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
       tmpDir = "";
 
-      // --- Step F: Optional ad filtering ---
       const openai = createOpenRouterClient();
       let finalText = rawText;
       let adFiltered = false;
-
       if (filterAdsFlag) {
         await send({ type: "status", message: "Filtering advertisements..." });
         try {
@@ -619,7 +852,6 @@ export async function POST(req: NextRequest): Promise<Response> {
       console.log(`💰 Estimated OpenRouter Cost: $${estimatedCost.toFixed(6)}`);
       console.log(`==================================================`);
 
-      // --- Emit final result ---
       await send({
         type: "result",
         data: {
