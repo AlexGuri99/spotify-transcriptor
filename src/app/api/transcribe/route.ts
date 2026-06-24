@@ -342,7 +342,13 @@ async function findEpisodeInFeed(feedUrl: string, episodeTitle: string): Promise
 
 /** 🧠 STREAM TO DISK SOLUTION: Bypasses RAM footprint completely for incoming master audio streams */
 async function streamAudioToDisk(url: string, destinationPath: string): Promise<void> {
-  const res = await fetch(url);
+  const res = await fetch(url, {
+    headers: {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+      "Accept": "*/*",
+      "Referer": "https://www.google.com/",
+    },
+  });
   if (!res.ok) throw new Error(`Failed to download audio (HTTP ${res.status})`);
   if (!res.body) throw new Error("Audio download body response configuration is empty.");
 
@@ -622,6 +628,7 @@ export async function POST(req: NextRequest): Promise<Response> {
           transcript: finalText,
           segments: [],
           adFiltered,
+          executionTime: Number(elapsedSeconds),
         },
       });
     } catch (err: any) {

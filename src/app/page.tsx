@@ -41,6 +41,7 @@ interface TranscriptionResult {
   transcript: string;
   segments: TranscriptSegment[];
   adFiltered: boolean;
+  executionTime?: number;
 }
 
 type Status =
@@ -340,6 +341,22 @@ export default function HomePage() {
                   View on Spotify →
                 </a>
               </div>
+
+              {result.executionTime !== undefined && (
+                <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-[0_4px_24px_rgba(0,0,0,0.01)]">
+                  <span className="font-[family-name:var(--font-barlow-condensed)] text-2xl font-bold text-black">
+                    Performance Metrics
+                  </span>
+                  <div className="mt-4 flex items-baseline gap-2">
+                    <span className="font-[family-name:var(--font-barlow-condensed)] text-xl font-bold text-gray-600">
+                      {result.executionTime.toFixed(1)}
+                    </span>
+                    <span className="font-sans text-sm font-medium text-gray-400">
+                      seconds
+                    </span>
+                  </div>
+                </div>
+              )}
 
               {result.segments.length > 0 && (
                 <div className="hidden rounded-2xl border border-gray-200 bg-white p-6 lg:block">
