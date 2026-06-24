@@ -71,6 +71,7 @@ function segmentKey(seg: TranscriptSegment, i: number): string {
 export default function HomePage() {
   const [url, setUrl] = useState("");
   const [filterAds, setFilterAds] = useState(false);
+  const [showTimestamps, setShowTimestamps] = useState(true);
   const [status, setStatus] = useState<Status>({ phase: "idle" });
   const [result, setResult] = useState<TranscriptionResult | null>(null);
   const [activeSegmentIndex, setActiveSegmentIndex] = useState<number | null>(
@@ -358,28 +359,24 @@ export default function HomePage() {
                 </div>
               )}
 
-              {result.segments.length > 0 && (
-                <div className="hidden rounded-2xl border border-gray-200 bg-white p-6 lg:block">
-                  <span className="font-sans mb-3 block text-[10px] font-bold uppercase tracking-widest text-gray-400">
-                    Jump index
+              <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-[0_4px_24px_rgba(0,0,0,0.01)]">
+                <span className="font-[family-name:var(--font-barlow-condensed)] text-2xl font-bold text-black">
+                  Options
+                </span>
+                <div className="mt-4 flex items-center justify-between">
+                  <span className="font-sans text-sm font-medium text-gray-700">
+                    Display Timestamps
                   </span>
-                  <div className="flex flex-wrap gap-1.5">
-                    {result.segments.map((seg, i) => (
-                      <button
-                        key={segmentKey(seg, i)}
-                        onClick={() => handleSegmentClick(i)}
-                        className={`rounded-lg px-2.5 py-1 font-mono text-xs transition-colors ${activeSegmentIndex === i
-                          ? "bg-black text-white"
-                          : "bg-[#F5F5F5] text-gray-500 hover:bg-gray-200"
-                          }`}
-                      >
-                        {formatTime(seg.start)}
-                      </button>
-                    ))}
-                  </div>
+                  <button
+                    onClick={() => setShowTimestamps((prev) => !prev)}
+                    className="font-sans rounded-xl border border-gray-200 px-4 py-2 text-xs font-medium transition-colors hover:border-black hover:text-black"
+                  >
+                    {showTimestamps ? "Hide Timestamps" : "Show Timestamps"}
+                  </button>
                 </div>
-              )}
-            </div>
+              </div>
+
+              </div>
 
             {/* Right Box: Pristine Transcript Output Sheet */}
             <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-[0_4px_24px_rgba(0,0,0,0.01)] flex flex-col">
@@ -389,7 +386,10 @@ export default function HomePage() {
                 </h2>
                 <button
                   onClick={() => {
-                    const blob = new Blob([result.transcript], { type: "text/plain" });
+                    const content = showTimestamps && result.segments.length > 0
+                      ? result.segments.map((seg) => `[${formatTime(seg.start)}] ${seg.text}`).join("\n")
+                      : result.transcript;
+                    const blob = new Blob([content], { type: "text/plain" });
                     const a = document.createElement("a");
                     a.href = URL.createObjectURL(blob);
                     a.download = `${result.metadata.episodeTitle.replace(/[^a-zA-Z0-9 ]/g, "")}.txt`;
@@ -421,9 +421,11 @@ export default function HomePage() {
                         : "hover:bg-gray-50"
                         }`}
                     >
-                      <span className="mt-0.5 shrink-0 font-mono text-xs font-bold text-gray-400">
-                        [{formatTime(seg.start)}]
-                      </span>
+                      {showTimestamps && (
+                        <span className="mt-0.5 shrink-0 font-mono text-xs font-bold text-gray-400">
+                          [{formatTime(seg.start)}]
+                        </span>
+                      )}
                       <span className="text-sm leading-relaxed text-[#222222]">
                         {seg.text}
                       </span>

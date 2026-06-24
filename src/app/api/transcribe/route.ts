@@ -626,7 +626,11 @@ export async function POST(req: NextRequest): Promise<Response> {
           metadata,
           rssFeedUrl,
           transcript: finalText,
-          segments: [],
+          segments: transcripts.map((text, i) => ({
+            start: i * CHUNK_DURATION_SECONDS,
+            end: (i + 1) * CHUNK_DURATION_SECONDS,
+            text,
+          })),
           adFiltered,
           executionTime: Number(elapsedSeconds),
         },
