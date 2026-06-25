@@ -9,6 +9,7 @@ import * as path from "path";
 import * as os from "os";
 import { Readable } from "stream";
 import { finished } from "stream/promises";
+import { findCachedEpisode, saveEpisodeRecord } from "@/lib/teable";
 
 /* ------------------------------------------------------------------ */
 /* Types                                                             */
@@ -52,6 +53,15 @@ const CHUNK_DURATION_SECONDS = 30;
 
 /** 🔒 CRITICAL CONCURRENCY LIMIT: Process only 3 at a time to stay under 512MB RAM on Render */
 const MAX_CONCURRENT_TRANSCRIBERS = 3;
+
+/**
+ * Rule 5 — in-memory processing lock.
+ * Tracks episode IDs that are currently running through the Whisper pipeline
+ * so concurrent requests for the same episode don't trigger duplicate work.
+ *
+ * Each entry is removed in the finally block of the streaming closure.
+ */
+const inProgressEpisodeIds = new Set<string>();
 
 /** Build the OpenAI-compatible client pointed at OpenRouter. */
 function createOpenRouterClient() {
@@ -603,7 +613,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   // Temporarily force Spotify-only pipeline; multi-platform handlers below are preserved but unreachable.
   const effectiveMode = "spotify" as const;
 
-  // --- URL validation: run before streaming to return a clean HTTP 400 ---
+  // --- URL validation ---
   if (!inputUrl || typeof inputUrl !== "string" || !inputUrl.trim()) {
     return Response.json(
       { type: "error", error: "Missing or invalid URL in request body." },
@@ -611,27 +621,83 @@ export async function POST(req: NextRequest): Promise<Response> {
     );
   }
   const trimmedUrl = inputUrl.trim();
-  const actualPlatform = detectPlatform(trimmedUrl);
-  if (!actualPlatform) {
-    return Response.json(
-      { type: "error", error: "Could not recognize the URL format. Please check the link and try again." },
-      { status: 400 }
-    );
-  }
-  if (actualPlatform !== sourceMode) {
-    const modeLabels: Record<string, string> = {
-      spotify: "Spotify Podcasts",
-      youtube: "YouTube",
-      apple: "Apple Podcasts",
-    };
+
+  /* ------------------------------------------------------------------ */
+  /* RULE 1 — Standardize and Extract                                   */
+  /* Extract the unique 22-character alphanumeric Spotify episode ID     */
+  /* from the URL. Do not use the raw URL string for database matching. */
+  /* ------------------------------------------------------------------ */
+  const episodeIdMatch = trimmedUrl.match(EPISODE_ID_RE);
+  const episodeId = episodeIdMatch?.[1] ?? null;
+
+  if (!episodeId) {
     return Response.json(
       {
         type: "error",
-        error: `You selected ${modeLabels[sourceMode]}, but pasted a ${modeLabels[actualPlatform]} link. Please switch tabs.`,
+        error:
+          "Could not recognize the URL format. Please check the link and try again.",
       },
       { status: 400 }
     );
   }
+
+  /* ------------------------------------------------------------------ */
+  /* RULE 5 — Prevent Parallel Processing                               */
+  /* If this episode is already running through the active Whisper       */
+  /* pipeline, reject the duplicate before it can start.                */
+  /* ------------------------------------------------------------------ */
+  if (inProgressEpisodeIds.has(episodeId)) {
+    return Response.json(
+      {
+        type: "error",
+        error:
+          "This episode is currently being transcribed. Please wait a moment and try again.",
+      },
+      { status: 409 }
+    );
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* RULE 2 — Initial Cache Check                                       */
+  /* RULE 3 — Validate Cache Integrity                                  */
+  /* Query Teable using the extracted episode ID. If a record exists     */
+  /* but its segments column is empty or malformed, treat as cache miss. */
+  /* ------------------------------------------------------------------ */
+  const cachedEpisode = await findCachedEpisode(episodeId);
+  if (cachedEpisode) {
+    /* RULE 4 — Simulated Delay Flag                                    */
+    /* Return delayRequired: true so the frontend can display an         */
+    /* artificial 10-second countdown to preserve product value.         */
+    const transcript = cachedEpisode.segments
+      .map((s) => s.text)
+      .join("\n\n");
+    const metadata: ScrapedMetadata = {
+      episodeTitle: cachedEpisode.title,
+      showName: "",
+    };
+
+    console.log(
+      `[Cache] HIT for episode ${episodeId} — returning cached result with delayRequired`
+    );
+
+    return Response.json({
+      type: "result",
+      cached: true,
+      delayRequired: true,
+      data: {
+        metadata,
+        rssFeedUrl: null,
+        transcript,
+        segments: cachedEpisode.segments,
+        adFiltered: false,
+        executionTime: cachedEpisode.executionTime,
+      },
+    });
+  }
+
+  /* --- Register lock before entering the streaming pipeline --- */
+  inProgressEpisodeIds.add(episodeId);
+  console.log(`[Lock] Acquired for episode ${episodeId}`);
 
   // --- Proceed with streaming NDJSON ---
   const encoder = new TextEncoder();
@@ -781,17 +847,34 @@ export async function POST(req: NextRequest): Promise<Response> {
       console.log(`💰 Estimated OpenRouter Cost: $${estimatedCost.toFixed(6)}`);
       console.log(`==================================================`);
 
+      const finalSegments: TranscriptSegment[] = transcripts.map(
+        (text, i) => ({
+          start: i * CHUNK_DURATION_SECONDS,
+          end: (i + 1) * CHUNK_DURATION_SECONDS,
+          text,
+        })
+      );
+
+      /* ---------------------------------------------------------------- */
+      /* RULE 6 — Save Successful Runs                                   */
+      /* Persist the completed transcription to Teable so future requests  */
+      /* for the same episode hit the cache.                               */
+      /* ---------------------------------------------------------------- */
+      await send({ type: "status", message: "Caching transcription..." });
+      await saveEpisodeRecord({
+        episodeId,
+        title: metadata.episodeTitle,
+        segments: finalSegments,
+        executionTime: Number(elapsedSeconds),
+      });
+
       await send({
         type: "result",
         data: {
           metadata,
           rssFeedUrl,
           transcript: finalText,
-          segments: transcripts.map((text, i) => ({
-            start: i * CHUNK_DURATION_SECONDS,
-            end: (i + 1) * CHUNK_DURATION_SECONDS,
-            text,
-          })),
+          segments: finalSegments,
           adFiltered,
           executionTime: Number(elapsedSeconds),
         },
@@ -802,6 +885,9 @@ export async function POST(req: NextRequest): Promise<Response> {
       } catch { /* writer may already be closed */ }
     } finally {
       if (tmpDir) await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+      /* RULE 5 — Release the processing lock so future requests can proceed */
+      inProgressEpisodeIds.delete(episodeId);
+      console.log(`[Lock] Released for episode ${episodeId}`);
       try { await writer.close(); } catch { /* stream already closed */ }
     }
   })();
