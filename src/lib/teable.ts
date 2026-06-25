@@ -124,14 +124,22 @@ export async function findCachedEpisode(
   const { baseUrl, apiKey, tableId } = requireConfig();
 
   try {
-    const url = new URL(`/api/table/${tableId}/record`, baseUrl);
-    url.searchParams.set(
-      "filterByTql",
-      `("spotify_episode_id" = '${episodeId}')`
-    );
-    url.searchParams.set("take", "1");
+    const queryParams = new URLSearchParams({
+      filter: JSON.stringify({
+        conjunction: "and",
+        conditions: [
+          {
+            fieldId: "spotify_episode_id",
+            operator: "is",
+            value: episodeId,
+          },
+        ],
+      }),
+      take: "1",
+    });
+    const fetchUrl = `${baseUrl}/api/table/${tableId}/record?${queryParams.toString()}`;
 
-    const res = await fetch(url.toString(), {
+    const res = await fetch(fetchUrl, {
       headers: {
         Authorization: `Bearer ${apiKey}`,
         Accept: "application/json",
