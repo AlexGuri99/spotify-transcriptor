@@ -657,44 +657,6 @@ export async function POST(req: NextRequest): Promise<Response> {
     );
   }
 
-  /* ------------------------------------------------------------------ */
-  /* RULE 2 — Initial Cache Check                                       */
-  /* RULE 3 — Validate Cache Integrity                                  */
-  /* Query Teable using the extracted episode ID. If a record exists     */
-  /* but its segments column is empty or malformed, treat as cache miss. */
-  /* ------------------------------------------------------------------ */
-  const cachedEpisode = await findCachedEpisode(episodeId);
-  if (cachedEpisode) {
-    /* RULE 4 — Simulated Delay Flag                                    */
-    /* Return delayRequired: true so the frontend can display an         */
-    /* artificial 10-second countdown to preserve product value.         */
-    const transcript = cachedEpisode.segments
-      .map((s) => s.text)
-      .join("\n\n");
-    const metadata: ScrapedMetadata = {
-      episodeTitle: cachedEpisode.title,
-      showName: "",
-    };
-
-    console.log(
-      `[Cache] HIT for episode ${episodeId} — returning cached result with delayRequired`
-    );
-
-    return Response.json({
-      type: "result",
-      cached: true,
-      delayRequired: true,
-      data: {
-        metadata,
-        rssFeedUrl: null,
-        transcript,
-        segments: cachedEpisode.segments,
-        adFiltered: false,
-        executionTime: cachedEpisode.executionTime,
-      },
-    });
-  }
-
   /* --- Register lock before entering the streaming pipeline --- */
   inProgressEpisodeIds.add(episodeId);
   console.log(`[Lock] Acquired for episode ${episodeId}`);
@@ -710,6 +672,45 @@ export async function POST(req: NextRequest): Promise<Response> {
   (async () => {
     let tmpDir = "";
     try {
+      /* ---------------------------------------------------------------- */
+      /* RULES 2-4 — Cache check inside streaming for NDJSON consistency  */
+      /* ---------------------------------------------------------------- */
+      const cachedEpisode = await findCachedEpisode(episodeId);
+      if (cachedEpisode) {
+        await send({
+          type: "status",
+          message: "Extracting cached timeline matrices...",
+        });
+
+        const transcript = cachedEpisode.segments
+          .map((s) => s.text)
+          .join("\n\n");
+        const metadata: ScrapedMetadata = {
+          episodeTitle: cachedEpisode.title,
+          showName: "",
+        };
+
+        console.log(
+          `[Cache] HIT for episode ${episodeId} — streaming cached result with delayRequired`
+        );
+
+        await send({
+          type: "result",
+          cached: true,
+          delayRequired: true,
+          data: {
+            metadata,
+            rssFeedUrl: null,
+            transcript,
+            segments: cachedEpisode.segments,
+            adFiltered: false,
+            executionTime: cachedEpisode.executionTime,
+          },
+        });
+
+        return; /* early exit — finally block handles lock cleanup */
+      }
+
       /* ---------------------------------------------------------------- */
       /* YOUTUBE — try native captions first, fall back to audio DL      */
       /* ---------------------------------------------------------------- */
