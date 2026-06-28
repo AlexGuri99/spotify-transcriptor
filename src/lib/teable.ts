@@ -119,6 +119,7 @@ function recordToCachedData(record: any): CachedEpisodeData | null {
 export async function findCachedEpisode(
   episodeId: string
 ): Promise<CachedEpisodeData | null> {
+  console.log("🔍 [Teable Cache Check] Initiating lookup for ID:", episodeId);
   if (!isConfigured()) return null;
 
   const { baseUrl, apiKey, tableId } = requireConfig();
@@ -138,6 +139,7 @@ export async function findCachedEpisode(
       take: "1",
     });
     const fetchUrl = `${baseUrl}/api/table/${tableId}/record?${queryParams.toString()}`;
+    console.log("🌐 [Teable Cache URL]:", fetchUrl);
 
     const res = await fetch(fetchUrl, {
       headers: {
@@ -154,15 +156,20 @@ export async function findCachedEpisode(
       return null;
     }
 
-    const body: any = await res.json();
-    const record = body?.records?.[0];
-    if (!record) return null;
+    const data: any = await res.json();
+    const record = data?.records?.[0];
 
-    return recordToCachedData(record);
-  } catch (err: any) {
-    console.warn(
-      `[Teable] Query failed: ${err?.message ?? err} — treating as cache miss`
+    if (!record) {
+      console.log("ℹ️ [Teable Cache Miss] No existing record found for ID:", episodeId);
+      return null;
+    }
+
+    console.log(
+      `✅ [Teable Cache Hit] Found transaction match for episode: "${data.records[0].fields.title}"`
     );
+    return recordToCachedData(record);
+  } catch (error) {
+    console.error("❌ [Teable Cache Read Error]:", error);
     return null;
   }
 }
@@ -184,9 +191,26 @@ export async function saveEpisodeRecord(params: {
   segments: TranscriptSegment[];
   executionTime: number;
 }): Promise<void> {
+  console.log("📦 [Teable Save Attempt] Preparing payload structure for:", {
+    episodeId: params.episodeId,
+    title: params.title,
+    segmentCount: params.segments?.length,
+    executionTime: params.executionTime,
+  });
+
   if (!isConfigured()) return;
 
   const { baseUrl, apiKey, tableId } = requireConfig();
+
+  const RECORD_ENDPOINT = `${baseUrl}/api/table/${tableId}/record`;
+  const HEADERS = {
+    Authorization: `Bearer ${apiKey}`,
+    "Content-Type": "application/json",
+    Accept: "application/json",
+  };
+
+  console.log("🌐 [Teable Save Endpoint]:", RECORD_ENDPOINT);
+  console.log("📋 [Teable Save Headers]:", JSON.stringify(HEADERS, null, 2));
 
   const payload = {
     records: [
@@ -204,30 +228,26 @@ export async function saveEpisodeRecord(params: {
   };
 
   try {
-    const res = await fetch(`${baseUrl}/api/table/${tableId}/record`, {
+    const res = await fetch(RECORD_ENDPOINT, {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
+      headers: HEADERS,
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(10_000),
     });
 
+    console.log(`📡 [Teable Server Response] Status: ${res.status} ${res.statusText}`);
+
     if (!res.ok) {
-      const errText = await res.text().catch(() => "unknown");
-      console.warn(
-        `[Teable] Failed to save record: HTTP ${res.status} — ${errText}`
-      );
-    } else {
-      console.log(
-        `[Teable] Saved transcription for episode ${params.episodeId}`
-      );
+      const errorBody = await res.text();
+      console.error("🛑 [Teable Database Rejection Error Body]:", errorBody);
+      return;
     }
-  } catch (err: any) {
-    console.warn(
-      `[Teable] Save failed: ${err?.message ?? err} — transcript data is not lost, only uncached`
+
+    const responseData: any = await res.json();
+    console.log(
+      `🎉 [Teable Cache Write Success] Committed new row record ID: ${responseData.records[0].id}`
     );
+  } catch (error) {
+    console.error("💥 [Teable Save Exception Fatal Crash]:", error);
   }
 }
