@@ -1,4 +1,4 @@
-﻿import { NextRequest } from "next/server";
+import { NextRequest } from "next/server";
 import * as cheerio from "cheerio";
 import Parser from "rss-parser";
 import OpenAI from "openai";
@@ -45,17 +45,17 @@ interface SuccessResponse {
 
 const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
 
-/** Maximum binary size before we split into chunks (4 MB â€” Base64 expansion + safety margin). */
+/** Maximum binary size before we split into chunks (4 MB — Base64 expansion + safety margin). */
 const CHUNK_SIZE_BYTES = 1 * 1024 * 1024;
 
-/** Duration of each audio chunk in seconds (30 seconds â€” keeps Base64 payload small). */
+/** Duration of each audio chunk in seconds (30 seconds — keeps Base64 payload small). */
 const CHUNK_DURATION_SECONDS = 30;
 
-/** ðŸ”’ CRITICAL CONCURRENCY LIMIT: Process only 3 at a time to stay under 512MB RAM on Render */
+/** 🔥 CRITICAL CONCURRENCY LIMIT: Process only 3 at a time to stay under 512MB RAM on Render */
 const MAX_CONCURRENT_TRANSCRIBERS = 3;
 
 /**
- * Rule 5 â€” in-memory processing lock.
+ * Rule 5 — in-memory processing lock.
  * Tracks episode IDs that are currently running through the Whisper pipeline
  * so concurrent requests for the same episode don't trigger duplicate work.
  *
@@ -153,22 +153,22 @@ async function scrapeSpotifyEpisode(url: string): Promise<ScrapedMetadata | null
   let episodeTitle: string;
   let showName: string;
 
-  const hasIndexPrefix = /^(?:×¤×¨×§\s|Ep[\s.]|Episode\s)/i.test(rawTitle);
-  const dashMatch = rawTitle.match(/^(.+?)\s+[-â€“â€”]\s+(.+)$/);
+  const hasIndexPrefix = /^(?:פרק\s|Ep[\s.]|Episode\s)/i.test(rawTitle);
+  const dashMatch = rawTitle.match(/^(.+?)\s+[-–—]\s+(.+)$/);
 
   if (dashMatch && !hasIndexPrefix) {
     episodeTitle = dashMatch[1].trim();
     showName = dashMatch[2].trim();
-    console.log("-> Split by dash â€” episode:", episodeTitle, "| show:", showName);
+    console.log("-> Split by dash — episode:", episodeTitle, "| show:", showName);
   } else {
     episodeTitle = rawTitle;
     showName = authorName || "Unknown Show";
-    console.log("-> Using full title â€” episode:", episodeTitle, "| show hint:", showName);
+    console.log("-> Using full title — episode:", episodeTitle, "| show hint:", showName);
   }
 
   if (!showName) showName = "Unknown Show";
 
-  console.log("-> Final â€” episodeTitle:", episodeTitle, "| showName:", showName);
+  console.log("-> Final — episodeTitle:", episodeTitle, "| showName:", showName);
   return { episodeTitle, showName };
 }
 
@@ -183,7 +183,7 @@ async function findRssFeed(
 ): Promise<RssFeedResult> {
   if (episodeTitle) {
     const cleanedEp = cleanSearchQuery(episodeTitle);
-    console.log("-> ðŸŽ¯ Querying iTunes Episodes:", cleanedEp);
+    console.log("-> 🎯 Querying iTunes Episodes:", cleanedEp);
 
     const epRes = await fetch(
       `https://itunes.apple.com/search?media=podcast&entity=podcastEpisode&term=${encodeURIComponent(cleanedEp)}&limit=10`,
@@ -213,7 +213,7 @@ async function findRssFeed(
 
           if (isKnownFP && !exactMatch) {
             console.log(
-              "-> Skipping known false-positive â€” no exact match:",
+              "-> Skipping known false-positive — no exact match:",
               r.collectionName,
               r.trackName
             );
@@ -232,7 +232,7 @@ async function findRssFeed(
 
           if (best) {
             console.log(
-              "-> ðŸŽ¯ Selected accurate podcast:",
+              "-> 🎯 Selected accurate podcast:",
               best.result.collectionName ?? "",
               "| track:",
               best.result.trackName
@@ -241,7 +241,7 @@ async function findRssFeed(
               best.result.enclosureUrl ?? best.result.previewUrl ?? null;
             if (directAudioUrl) {
               console.log(
-                "-> ðŸš€ Shortcut! Found direct audio stream link:",
+                "-> 🚀 Shortcut! Found direct audio stream link:",
                 directAudioUrl
               );
               console.log(
@@ -272,7 +272,7 @@ async function findRssFeed(
 
   const isUnknownShow = !showName || /^unknown\s*show$/i.test(showName);
   if (isUnknownShow) {
-    console.log("-> Show name is unknown â€” skipping fallback search.");
+    console.log("-> Show name is unknown — skipping fallback search.");
     return { found: false, reason: "unknown-show" };
   }
 
@@ -374,7 +374,7 @@ async function findEpisodeInFeed(feedUrl: string, episodeTitle: string): Promise
   return null;
 }
 
-/** ðŸ§  STREAM TO DISK SOLUTION: Bypasses RAM footprint completely for incoming master audio streams */
+/** 🧠 STREAM TO DISK SOLUTION: Bypasses RAM footprint completely for incoming master audio streams */
 async function streamAudioToDisk(url: string, destinationPath: string): Promise<void> {
   const res = await fetch(url, {
     headers: {
@@ -451,10 +451,10 @@ async function transcribeChunk(chunkPath: string, chunkIndex: number, totalChunk
       if (!response.ok) throw new Error(responseData?.error?.message || `HTTP ${response.status}`);
 
       const text = (responseData.text || "").trim();
-      console.log(`-> âœ… ${label} transcribed (${text.length} chars)`);
+      console.log(`-> ✅ ${label} transcribed (${text.length} chars)`);
       return text;
     } catch (err: any) {
-      console.log(`-> âŒ ${label} attempt ${attempt}/3 failed: ${err.message || err}`);
+      console.log(`-> ❌ ${label} attempt ${attempt}/3 failed: ${err.message || err}`);
       if (attempt < 3) {
         const delay = Math.min(1000 * 2 ** (attempt - 1), 10000);
         await new Promise((r) => setTimeout(r, delay));
@@ -462,7 +462,7 @@ async function transcribeChunk(chunkPath: string, chunkIndex: number, totalChunk
     }
   }
 
-  return `[âš ï¸ Audio segment unavailable â€” ${label}]`;
+  return `[⚠️ Audio segment unavailable — ${label}]`;
 }
 
 /** Pass the transcript through an LLM to strip sponsor/ad segments. */
@@ -477,7 +477,7 @@ async function filterAds(openai: OpenAI, rawTranscript: string, segments: Transc
           "advertisements, promotional codes, and paid endorsements from the transcript.",
           "Rules:",
           "- Remove any segment that is a sponsor mention, ad read, or promo code pitch.",
-          "- Keep all actual show content intact â€” host discussions, interviews, etc.",
+          "- Keep all actual show content intact — host discussions, interviews, etc.",
           "- Do NOT rewrite or paraphrase anything; remove only the ad segments.",
           "- If a sentence is partly ad and partly content, keep the content portion.",
           "- Return ONLY the cleaned transcript, no commentary or explanations.",
@@ -499,7 +499,7 @@ async function filterAds(openai: OpenAI, rawTranscript: string, segments: Transc
 }
 
 /* ------------------------------------------------------------------ */
-/* Apple Podcasts resolution â€” iTunes lookup â†’ direct audio URL       */
+/* Apple Podcasts resolution — iTunes lookup → direct audio URL       */
 /* ------------------------------------------------------------------ */
 
 interface AppleEpisodeInfo {
@@ -527,7 +527,7 @@ async function resolveAppleEpisode(episodeId: string): Promise<AppleEpisodeInfo>
 }
 
 /* ------------------------------------------------------------------ */
-/* YouTube captions â€” extract native timed captions from video page   */
+/* YouTube captions — extract native timed captions from video page   */
 /* ------------------------------------------------------------------ */
 
 interface YouTubeCaptionSegment {
@@ -600,7 +600,7 @@ async function fetchYouTubeCaptions(videoId: string): Promise<{
 }
 
 /* ------------------------------------------------------------------ */
-/* POST handler â€” streaming NDJSON response                           */
+/* POST handler — streaming NDJSON response                           */
 /* ------------------------------------------------------------------ */
 
 export async function POST(req: NextRequest): Promise<Response> {
@@ -623,7 +623,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   const trimmedUrl = inputUrl.trim();
 
   /* ------------------------------------------------------------------ */
-  /* RULE 1 â€” Standardize and Extract                                   */
+  /* RULE 1 — Standardize and Extract                                   */
   /* Extract the unique 22-character alphanumeric Spotify episode ID     */
   /* from the URL. Do not use the raw URL string for database matching. */
   /* ------------------------------------------------------------------ */
@@ -642,7 +642,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   /* ------------------------------------------------------------------ */
-  /* RULE 5 â€” Prevent Parallel Processing                               */
+  /* RULE 5 — Prevent Parallel Processing                               */
   /* If this episode is already running through the active Whisper       */
   /* pipeline, reject the duplicate before it can start.                */
   /* ------------------------------------------------------------------ */
@@ -661,21 +661,62 @@ export async function POST(req: NextRequest): Promise<Response> {
   inProgressEpisodeIds.add(episodeId);
   console.log(`[Lock] Acquired for episode ${episodeId}`);
 
+  /* Narrow the captured variable for closures that can't inherit
+   * control-flow narrowing across function boundaries (flush
+   * callback, runPipeline).  The `episodeId` is guaranteed non-null
+   * here because we return above when `episodeId` is falsy. */
+  const safeEpisodeId: string = episodeId;
+
   // --- Proceed with streaming NDJSON ---
   const encoder = new TextEncoder();
-  const stream = new TransformStream();
+
+  /* ---------------------------------------------------------------- */
+  /* Stream-lifecycle-scoped variables — populated by the processing   */
+  /* pipeline and consumed inside the TransformStream flush() callback */
+  /* so the database write is bound to the native stream teardown.    */
+  /* ---------------------------------------------------------------- */
+  const finalSegments: TranscriptSegment[] = [];
+  let latestMetadata: ScrapedMetadata | null = null;
+  let latestElapsedSeconds = 0;
+
+  const stream = new TransformStream({
+    transform(chunk, controller) {
+      controller.enqueue(chunk);
+    },
+    async flush(controller) {
+      /* 🎯 SAFE SYNCHRONOUS ENTRYPOINT: Run our database persistence here!
+       * flush() is called automatically when writer.close() completes in
+       * the finally block of the processing function.  The server cannot
+       * terminate the response until flush() resolves — no waitUntil race. */
+      if (finalSegments.length > 0 && safeEpisodeId) {
+        console.log("📡 [Stream Lifecycle Flush] Safeguard reached. Committing to database...");
+        try {
+          await saveEpisodeRecord({
+            episodeId: safeEpisodeId,
+            title: latestMetadata?.episodeTitle || "Podcast Transcript",
+            segments: finalSegments,
+            executionTime: Number(latestElapsedSeconds),
+          });
+          console.log("🎉 [Stream Lifecycle Flush] Database successfully committed!");
+        } catch (dbErr) {
+          console.error("❌ [Stream Lifecycle Flush] Database commit failed:", dbErr);
+        }
+      }
+    },
+  });
+
   const writer = stream.writable.getWriter();
 
   const send = (data: Record<string, unknown>) =>
     writer.write(encoder.encode(JSON.stringify(data) + "\n"));
 
-  const executionPromise = (async () => {
+  async function runPipeline() {
     let tmpDir = "";
     try {
       /* ---------------------------------------------------------------- */
-      /* RULES 2-4 â€” Cache check inside streaming for NDJSON consistency  */
+      /* RULES 2-4 — Cache check inside streaming for NDJSON consistency  */
       /* ---------------------------------------------------------------- */
-      const cachedEpisode = await findCachedEpisode(episodeId);
+      const cachedEpisode = await findCachedEpisode(safeEpisodeId);
       if (cachedEpisode) {
         await send({
           type: "status",
@@ -691,7 +732,7 @@ export async function POST(req: NextRequest): Promise<Response> {
         };
 
         console.log(
-          `[Cache] HIT for episode ${episodeId} â€” streaming cached result with delayRequired`
+          `[Cache] HIT for episode ${safeEpisodeId} — streaming cached result with delayRequired`
         );
 
         await send({
@@ -708,31 +749,31 @@ export async function POST(req: NextRequest): Promise<Response> {
           },
         });
 
-        return; /* early exit â€” finally block handles lock cleanup */
+        return; /* early exit — finally block handles lock cleanup & writer close */
       }
 
       /* ---------------------------------------------------------------- */
-      /* YOUTUBE â€” try native captions first, fall back to audio DL      */
+      /* YOUTUBE — try native captions first, fall back to audio DL      */
       /* ---------------------------------------------------------------- */
       if (false) {
-        /* YOUTUBE â€” disabled; effectiveMode forces Spotify pipeline
+        /* YOUTUBE — disabled; effectiveMode forces Spotify pipeline
         ...
         Entire YouTube handler code is commented out to bypass TS strict-null checks.
         ... */
       }
 
       /* ---------------------------------------------------------------- */
-      /* APPLE â€” iTunes lookup â†’ direct audio stream â†’ transcribe         */
+      /* APPLE — iTunes lookup → direct audio stream → transcribe         */
       /* ---------------------------------------------------------------- */
       if (false) {
-        /* APPLE â€” disabled; effectiveMode forces Spotify pipeline
+        /* APPLE — disabled; effectiveMode forces Spotify pipeline
         ...
         Entire Apple handler code is commented out to bypass TS strict-null checks.
         ... */
       }
 
       /* ---------------------------------------------------------------- */
-      /* SPOTIFY (default) â€” oEmbed â†’ RSS â†’ audio â†’ transcribe           */
+      /* SPOTIFY (default) — oEmbed → RSS → audio → transcribe           */
       /* ---------------------------------------------------------------- */
 
       // --- Step A: Scrape metadata ---
@@ -799,7 +840,7 @@ export async function POST(req: NextRequest): Promise<Response> {
         return;
       }
 
-      // --- Steps Dâ€“F: split, transcribe, filter (shared with Apple path) ---
+      // --- Steps D–F: split, transcribe, filter (shared with Apple path) ---
       await send({ type: "status", message: "Processing audio segments..." });
       const inputPath = path.join(tmpDir, "input.mp3");
       console.log("-> Splitting file segments directly via system execution binaries...");
@@ -842,32 +883,25 @@ export async function POST(req: NextRequest): Promise<Response> {
       const elapsedSeconds = ((Date.now() - startTime) / 1000).toFixed(1);
       const estimatedCost = total * 0.000333;
       console.log(`==================================================`);
-      console.log(`ðŸ PROCESSING COMPLETION METRICS`);
-      console.log(`â±ï¸ Total Execution Time: ${elapsedSeconds} seconds`);
-      console.log(`ðŸ“¦ Total Audio Chunks Processed: ${total}`);
-      console.log(`ðŸ’° Estimated OpenRouter Cost: $${estimatedCost.toFixed(6)}`);
+      console.log(`🏁 PROCESSING COMPLETION METRICS`);
+      console.log(`⏱️ Total Execution Time: ${elapsedSeconds} seconds`);
+      console.log(`📦 Total Audio Chunks Processed: ${total}`);
+      console.log(`💰 Estimated OpenRouter Cost: $${estimatedCost.toFixed(6)}`);
       console.log(`==================================================`);
 
-      const finalSegments: TranscriptSegment[] = transcripts.map(
-        (text, i) => ({
+      /* ---------------------------------------------------------------- */
+      /* Map local outputs into the higher-scoped variables so they are   */
+      /* visible inside the TransformStream flush() callback.             */
+      /* ---------------------------------------------------------------- */
+      transcripts.forEach((text, i) => {
+        finalSegments.push({
           start: i * CHUNK_DURATION_SECONDS,
           end: (i + 1) * CHUNK_DURATION_SECONDS,
           text,
-        })
-      );
-
-      /* ---------------------------------------------------------------- */
-      /* RULE 6 â€” Save Successful Runs                                   */
-      /* Persist the completed transcription to Teable so future requests  */
-      /* for the same episode hit the cache.                               */
-      /* ---------------------------------------------------------------- */
-      await send({ type: "status", message: "Caching transcription..." });
-      await saveEpisodeRecord({
-        episodeId,
-        title: metadata.episodeTitle,
-        segments: finalSegments,
-        executionTime: Number(elapsedSeconds),
+        });
       });
+      latestMetadata = metadata;
+      latestElapsedSeconds = Number(elapsedSeconds);
 
       await send({
         type: "result",
@@ -886,12 +920,17 @@ export async function POST(req: NextRequest): Promise<Response> {
       } catch { /* writer may already be closed */ }
     } finally {
       if (tmpDir) await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
-      /* RULE 5 â€” Release the processing lock so future requests can proceed */
-      inProgressEpisodeIds.delete(episodeId);
-      console.log(`[Lock] Released for episode ${episodeId}`);
+      /* RULE 5 — Release the processing lock so future requests can proceed */
+      inProgressEpisodeIds.delete(safeEpisodeId);
+      console.log(`[Lock] Released for episode ${safeEpisodeId}`);
+      /* Closing the writable side signals no more chunks; the TransformStream
+       * flush() callback fires here, inside the native stream lifecycle,
+       * keeping the connection open until the database write resolves. */
       try { await writer.close(); } catch { /* stream already closed */ }
     }
-  })();
+  }
+
+  const executionPromise = runPipeline();
 
   /* waitUntil is not part of the NextRequest type, but is available at
    * runtime on platforms like Vercel Edge, Cloudflare Workers, and Railway.
