@@ -130,7 +130,7 @@ export async function findCachedEpisode(
         conjunction: "and",
         conditions: [
           {
-            fieldId: "spotify_episode_id",
+            fieldName: "spotify_episode_id",
             operator: "is",
             value: episodeId,
           },

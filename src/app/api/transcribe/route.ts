@@ -661,62 +661,21 @@ export async function POST(req: NextRequest): Promise<Response> {
   inProgressEpisodeIds.add(episodeId);
   console.log(`[Lock] Acquired for episode ${episodeId}`);
 
-  /* Narrow the captured variable for closures that can't inherit
-   * control-flow narrowing across function boundaries (flush
-   * callback, runPipeline).  The `episodeId` is guaranteed non-null
-   * here because we return above when `episodeId` is falsy. */
-  const safeEpisodeId: string = episodeId;
-
   // --- Proceed with streaming NDJSON ---
   const encoder = new TextEncoder();
-
-  /* ---------------------------------------------------------------- */
-  /* Stream-lifecycle-scoped variables — populated by the processing   */
-  /* pipeline and consumed inside the TransformStream flush() callback */
-  /* so the database write is bound to the native stream teardown.    */
-  /* ---------------------------------------------------------------- */
-  const finalSegments: TranscriptSegment[] = [];
-  let latestMetadata: ScrapedMetadata | null = null;
-  let latestElapsedSeconds = 0;
-
-  const stream = new TransformStream({
-    transform(chunk, controller) {
-      controller.enqueue(chunk);
-    },
-    async flush(controller) {
-      /* 🎯 SAFE SYNCHRONOUS ENTRYPOINT: Run our database persistence here!
-       * flush() is called automatically when writer.close() completes in
-       * the finally block of the processing function.  The server cannot
-       * terminate the response until flush() resolves — no waitUntil race. */
-      if (finalSegments.length > 0 && safeEpisodeId) {
-        console.log("📡 [Stream Lifecycle Flush] Safeguard reached. Committing to database...");
-        try {
-          await saveEpisodeRecord({
-            episodeId: safeEpisodeId,
-            title: latestMetadata?.episodeTitle || "Podcast Transcript",
-            segments: finalSegments,
-            executionTime: Number(latestElapsedSeconds),
-          });
-          console.log("🎉 [Stream Lifecycle Flush] Database successfully committed!");
-        } catch (dbErr) {
-          console.error("❌ [Stream Lifecycle Flush] Database commit failed:", dbErr);
-        }
-      }
-    },
-  });
-
+  const stream = new TransformStream();
   const writer = stream.writable.getWriter();
 
   const send = (data: Record<string, unknown>) =>
     writer.write(encoder.encode(JSON.stringify(data) + "\n"));
 
-  async function runPipeline() {
+  const executionPromise = (async () => {
     let tmpDir = "";
     try {
       /* ---------------------------------------------------------------- */
       /* RULES 2-4 — Cache check inside streaming for NDJSON consistency  */
       /* ---------------------------------------------------------------- */
-      const cachedEpisode = await findCachedEpisode(safeEpisodeId);
+      const cachedEpisode = await findCachedEpisode(episodeId);
       if (cachedEpisode) {
         await send({
           type: "status",
@@ -732,7 +691,7 @@ export async function POST(req: NextRequest): Promise<Response> {
         };
 
         console.log(
-          `[Cache] HIT for episode ${safeEpisodeId} — streaming cached result with delayRequired`
+          `[Cache] HIT for episode ${episodeId} — streaming cached result with delayRequired`
         );
 
         await send({
@@ -749,7 +708,7 @@ export async function POST(req: NextRequest): Promise<Response> {
           },
         });
 
-        return; /* early exit — finally block handles lock cleanup & writer close */
+        return; /* early exit — finally block handles lock cleanup */
       }
 
       /* ---------------------------------------------------------------- */
@@ -889,19 +848,27 @@ export async function POST(req: NextRequest): Promise<Response> {
       console.log(`💰 Estimated OpenRouter Cost: $${estimatedCost.toFixed(6)}`);
       console.log(`==================================================`);
 
-      /* ---------------------------------------------------------------- */
-      /* Map local outputs into the higher-scoped variables so they are   */
-      /* visible inside the TransformStream flush() callback.             */
-      /* ---------------------------------------------------------------- */
-      transcripts.forEach((text, i) => {
-        finalSegments.push({
+      const finalSegments: TranscriptSegment[] = transcripts.map(
+        (text, i) => ({
           start: i * CHUNK_DURATION_SECONDS,
           end: (i + 1) * CHUNK_DURATION_SECONDS,
           text,
-        });
+        })
+      );
+
+      /* ---------------------------------------------------------------- */
+      /* SEQUENTIAL SYNC: Save to Teable BEFORE sending the result token.  */
+      /* This guarantees the database write completes while the stream is  */
+      /* still open and the platform runtime cannot cut us off.            */
+      /* ---------------------------------------------------------------- */
+      console.log("📡 [Pipeline Sync Complete] Safely committing records straight to Teable...");
+      await saveEpisodeRecord({
+        episodeId,
+        title: metadata.episodeTitle,
+        segments: finalSegments,
+        executionTime: Number(elapsedSeconds),
       });
-      latestMetadata = metadata;
-      latestElapsedSeconds = Number(elapsedSeconds);
+      console.log("🎉 [Pipeline Sync Complete] Teable write confirmed!");
 
       await send({
         type: "result",
@@ -921,16 +888,11 @@ export async function POST(req: NextRequest): Promise<Response> {
     } finally {
       if (tmpDir) await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
       /* RULE 5 — Release the processing lock so future requests can proceed */
-      inProgressEpisodeIds.delete(safeEpisodeId);
-      console.log(`[Lock] Released for episode ${safeEpisodeId}`);
-      /* Closing the writable side signals no more chunks; the TransformStream
-       * flush() callback fires here, inside the native stream lifecycle,
-       * keeping the connection open until the database write resolves. */
+      inProgressEpisodeIds.delete(episodeId);
+      console.log(`[Lock] Released for episode ${episodeId}`);
       try { await writer.close(); } catch { /* stream already closed */ }
     }
-  }
-
-  const executionPromise = runPipeline();
+  })();
 
   /* waitUntil is not part of the NextRequest type, but is available at
    * runtime on platforms like Vercel Edge, Cloudflare Workers, and Railway.
