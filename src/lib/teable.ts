@@ -126,7 +126,7 @@ export async function findCachedEpisode(
 
   try {
     const queryParams = new URLSearchParams({
-      filter: JSON.stringify({
+      filterBy: JSON.stringify({
         conjunction: "and",
         conditions: [
           {
