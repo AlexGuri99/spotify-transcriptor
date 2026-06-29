@@ -459,7 +459,7 @@ export default function HomePage() {
 
       {/* ---- Footer ---- */}
       <footer className="border-t border-gray-100 bg-white px-8 py-5 text-center font-sans text-[11px] font-medium text-gray-400">
-        Not affiliated with Spotify Corporation · <a href="https://github.com/AlexGuri99/spotify-transcriptor" target="_blank" rel="noopener noreferrer" className="hover:text-gray-600 transition-colors">Made by Alex Gurinovich</a>
+        Not affiliated with Spotify Corporation · Made by Alex Gurinovich
       </footer>
     </div>
   );
