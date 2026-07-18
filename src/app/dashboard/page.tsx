@@ -39,7 +39,7 @@ export default function DashboardPage() {
             <Link href="/features" className="hover:text-black transition-colors">Features</Link>
             <span className="cursor-not-allowed opacity-40">Pricing</span>
             <span className="cursor-not-allowed opacity-40">Docs</span>
-            <Link href="/dashboard" className="text-black">Dashboard</Link>
+            <Link href="/dashboard" className="font-sans text-sm font-medium text-black">Dashboard</Link>
           </nav>
         </div>
       </header>
