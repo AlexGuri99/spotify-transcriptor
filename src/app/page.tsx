@@ -5,7 +5,7 @@ import { Newsreader, Inter } from "next/font/google";
 import { Videotape } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
-import { useSession, signIn, signOut } from "next-auth/react";
+import { useSession, signIn } from "next-auth/react";
 import iphonePic from "@/assets/iphone.png";
 
 // Load the high-contrast editorial serif to match the design aesthetic
@@ -248,22 +248,10 @@ export default function HomePage() {
             <Link href="/features" className="hover:text-black transition-colors">Features</Link>
             <span className="cursor-not-allowed opacity-40">Pricing</span>
             <span className="cursor-not-allowed opacity-40">Docs</span>
-            <span className="cursor-not-allowed opacity-40">Dashboard</span>
             {session?.user ? (
-              <button
-                onClick={() => signOut()}
-                className="flex items-center gap-2 rounded-xl bg-black px-4 py-2 text-sm font-medium text-white hover:bg-gray-900 transition-colors"
-              >
-                <img src={session.user.image ?? ""} alt="" className="h-5 w-5 rounded-full" />
-                Sign out
-              </button>
+              <Link href="/dashboard" className="text-black hover:text-black transition-colors">Dashboard</Link>
             ) : (
-              <button
-                onClick={() => signIn("google")}
-                className="rounded-xl bg-black px-4 py-2 text-sm font-medium text-white hover:bg-gray-900 transition-colors"
-              >
-                Sign in
-              </button>
+              <button onClick={() => signIn("google")} className="text-gray-500 hover:text-black transition-colors cursor-pointer bg-transparent border-none">Dashboard</button>
             )}
           </nav>
         </div>
