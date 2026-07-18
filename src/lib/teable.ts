@@ -129,13 +129,13 @@ export async function findCachedEpisode(
       conjunction: "and",
       filterSet: [
         {
-          fieldId: "spotify_episode_id",
+          fieldId: "fldMUFvlZu5Cvt1eYgD",
           operator: "is",
           value: episodeId,
         },
       ],
     });
-    const fetchUrl = `${baseUrl}/api/table/${tableId}/record?filter=${encodeURIComponent(filterJson)}&take=1`;
+    const fetchUrl = `${baseUrl}/api/table/${tableId}/record?filter=${encodeURIComponent(filterJson)}&take=1&fieldKeyType=name`;
     console.log("🌐 [Teable Cache URL]:", fetchUrl);
 
     const res = await fetch(fetchUrl, {
