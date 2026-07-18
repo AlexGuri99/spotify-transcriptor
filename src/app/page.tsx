@@ -5,6 +5,7 @@ import { Newsreader, Inter } from "next/font/google";
 import { Videotape } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
+import { useSession, signIn, signOut } from "next-auth/react";
 import iphonePic from "@/assets/iphone.png";
 
 // Load the high-contrast editorial serif to match the design aesthetic
@@ -70,6 +71,7 @@ function segmentKey(seg: TranscriptSegment, i: number): string {
 /* ------------------------------------------------------------------ */
 
 export default function HomePage() {
+  const { data: session } = useSession();
   const [url, setUrl] = useState("");
   const [filterAds, setFilterAds] = useState(false);
   const [showTimestamps, setShowTimestamps] = useState(true);
@@ -244,9 +246,25 @@ export default function HomePage() {
           </button>
           <nav className="font-sans text-sm font-medium text-gray-500 flex items-center gap-8">
             <Link href="/features" className="hover:text-black transition-colors">Features</Link>
-            <span className="cursor-not-allowed opacity-40">Api</span>
+            <span className="cursor-not-allowed opacity-40">Pricing</span>
             <span className="cursor-not-allowed opacity-40">Docs</span>
             <span className="cursor-not-allowed opacity-40">Dashboard</span>
+            {session?.user ? (
+              <button
+                onClick={() => signOut()}
+                className="flex items-center gap-2 rounded-xl bg-black px-4 py-2 text-sm font-medium text-white hover:bg-gray-900 transition-colors"
+              >
+                <img src={session.user.image ?? ""} alt="" className="h-5 w-5 rounded-full" />
+                Sign out
+              </button>
+            ) : (
+              <button
+                onClick={() => signIn("google")}
+                className="rounded-xl bg-black px-4 py-2 text-sm font-medium text-white hover:bg-gray-900 transition-colors"
+              >
+                Sign in
+              </button>
+            )}
           </nav>
         </div>
       </header>

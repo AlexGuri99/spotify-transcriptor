@@ -3,6 +3,7 @@
 import { Newsreader, Inter } from "next/font/google";
 import { Videotape, Sparkles, Search, Clock, Shield, Download } from "lucide-react";
 import Link from "next/link";
+import { useSession, signIn, signOut } from "next-auth/react";
 
 const editorialSerif = Newsreader({
   subsets: ["latin"],
@@ -40,6 +41,7 @@ const features = [
   ];
 
 export default function FeaturesPage() {
+  const { data: session } = useSession();
   return (
     <div className={`${editorialSerif.variable} ${transcriptSans.variable} font-serif min-h-screen bg-[#FDFDFD] text-[#111111] antialiased flex flex-col`}>
       <header className="border-b border-gray-100 bg-white/80 backdrop-blur-md px-8 py-5 sticky top-0 z-50">
@@ -52,9 +54,25 @@ export default function FeaturesPage() {
           </Link>
           <nav className="font-sans text-sm font-medium text-gray-500 flex items-center gap-8">
             <Link href="/features" className="text-black">Features</Link>
-            <span className="cursor-not-allowed opacity-40">Api</span>
+            <span className="cursor-not-allowed opacity-40">Pricing</span>
             <span className="cursor-not-allowed opacity-40">Docs</span>
             <span className="cursor-not-allowed opacity-40">Dashboard</span>
+            {session?.user ? (
+              <button
+                onClick={() => signOut()}
+                className="flex items-center gap-2 rounded-xl bg-black px-4 py-2 text-sm font-medium text-white hover:bg-gray-900 transition-colors"
+              >
+                <img src={session.user.image ?? ""} alt="" className="h-5 w-5 rounded-full" />
+                Sign out
+              </button>
+            ) : (
+              <button
+                onClick={() => signIn("google")}
+                className="rounded-xl bg-black px-4 py-2 text-sm font-medium text-white hover:bg-gray-900 transition-colors"
+              >
+                Sign in
+              </button>
+            )}
           </nav>
         </div>
       </header>

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
 import iconAsset from "@/assets/icon.svg";
+import AuthProvider from "./auth-provider";
 
 const barlowCondensed = localFont({
   src: [
@@ -44,7 +45,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={barlowCondensed.variable}>
-      <body>{children}</body>
+      <body>
+        <AuthProvider>{children}</AuthProvider>
+      </body>
     </html>
   );
 }
