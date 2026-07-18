@@ -691,8 +691,9 @@ export async function POST(req: NextRequest): Promise<Response> {
         };
 
         console.log(
-          `[Cache] HIT for episode ${episodeId} — streaming cached result with delayRequired`
+          `[Cache] HIT for episode ${episodeId} — delaying 10s to mask cache behavior`
         );
+        await new Promise((r) => setTimeout(r, 10_000));
 
         await send({
           type: "result",
