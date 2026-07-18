@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, FormEvent } from "react";
 import { Newsreader, Inter } from "next/font/google";
 import { Videotape } from "lucide-react";
+import Link from "next/link";
 import Image from "next/image";
 import iphonePic from "@/assets/iphone.png";
 
@@ -242,7 +243,7 @@ export default function HomePage() {
             </span>
           </button>
           <nav className="font-sans text-sm font-medium text-gray-500 flex items-center gap-8">
-            <span className="cursor-not-allowed opacity-40">Features</span>
+            <Link href="/features" className="hover:text-black transition-colors">Features</Link>
             <span className="cursor-not-allowed opacity-40">Api</span>
             <span className="cursor-not-allowed opacity-40">Docs</span>
           </nav>
