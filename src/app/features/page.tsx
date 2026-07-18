@@ -57,9 +57,9 @@ export default function FeaturesPage() {
             <span className="cursor-not-allowed opacity-40">Pricing</span>
             <span className="cursor-not-allowed opacity-40">Docs</span>
             {session?.user ? (
-              <Link href="/dashboard" className="text-black">Dashboard</Link>
+              <Link href="/dashboard" className="hover:text-black transition-colors">Dashboard</Link>
             ) : (
-              <button onClick={() => signIn("google")} className="text-gray-500 hover:text-black transition-colors cursor-pointer bg-transparent border-none">Dashboard</button>
+              <button onClick={() => signIn("google")} className="hover:text-black transition-colors cursor-pointer bg-transparent border-none">Dashboard</button>
             )}
           </nav>
         </div>
