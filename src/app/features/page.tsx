@@ -1,7 +1,7 @@
 "use client";
 
 import { Newsreader, Inter } from "next/font/google";
-import { Videotape, Sparkles, Search, Clock, Shield, Download, Mic, Brain } from "lucide-react";
+import { Videotape, Sparkles, Search, Clock, Shield, Download } from "lucide-react";
 import Link from "next/link";
 
 const editorialSerif = Newsreader({
@@ -37,17 +37,7 @@ const features = [
     title: "Export to text",
     desc: "Download any transcript as a .txt file with one click. Read offline, archive, or feed into your own tools.",
   },
-  {
-    icon: Brain,
-    title: "Smart caching",
-    desc: "Already transcribed? We serve it instantly — no redundant processing, no wasted compute.",
-  },
-  {
-    icon: Mic,
-    title: "Multi-platform",
-    desc: "Built for Spotify today, with YouTube and Apple Podcasts support ready to flip on.",
-  },
-];
+  ];
 
 export default function FeaturesPage() {
   return (
@@ -71,7 +61,7 @@ export default function FeaturesPage() {
 
       <main className="mx-auto w-full max-w-4xl flex-1 px-8 py-20">
         <div className="text-center mb-16">
-          <h1 className={`text-4xl md:text-5xl font-bold italic tracking-tight leading-[1.1] text-black ${editorialSerif.className}`}>
+          <h1 className={`text-4xl md:text-5xl font-bold italic tracking-tight leading-[1.1] text-black ${editorialSerif.className} font-editorial`}>
             Who is Tranzkript for?
           </h1>
           <p className="font-sans text-lg text-gray-500 mt-4 max-w-2xl mx-auto leading-relaxed">
