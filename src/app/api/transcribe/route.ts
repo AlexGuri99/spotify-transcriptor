@@ -54,6 +54,21 @@ const CHUNK_DURATION_SECONDS = 30;
 /** 🔥 CRITICAL CONCURRENCY LIMIT: Process only 3 at a time to stay under 512MB RAM on Render */
 const MAX_CONCURRENT_TRANSCRIBERS = 3;
 
+/** Rate limiting — sliding window per IP */
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX_REQUESTS = 10;
+const rateLimitMap = new Map<string, number[]>();
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const timestamps = rateLimitMap.get(ip) || [];
+  const recent = timestamps.filter(t => now - t < RATE_LIMIT_WINDOW_MS);
+  if (recent.length >= RATE_LIMIT_MAX_REQUESTS) return true;
+  recent.push(now);
+  rateLimitMap.set(ip, recent);
+  return false;
+}
+
 /**
  * Rule 5 — in-memory processing lock.
  * Tracks episode IDs that are currently running through the Whisper pipeline
@@ -621,6 +636,19 @@ export async function POST(req: NextRequest): Promise<Response> {
     );
   }
   const trimmedUrl = inputUrl.trim();
+
+  /* ------------------------------------------------------------------ */
+  /* Rate limiting — sliding window per IP                              */
+  /* ------------------------------------------------------------------ */
+  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
+    ?? req.headers.get("x-real-ip")
+    ?? "unknown";
+  if (isRateLimited(ip)) {
+    return Response.json(
+      { type: "error", error: "Too many requests. Please wait a moment and try again." },
+      { status: 429 }
+    );
+  }
 
   /* ------------------------------------------------------------------ */
   /* RULE 1 — Standardize and Extract                                   */
