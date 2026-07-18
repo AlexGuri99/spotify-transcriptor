@@ -246,6 +246,7 @@ export default function HomePage() {
             <Link href="/features" className="hover:text-black transition-colors">Features</Link>
             <span className="cursor-not-allowed opacity-40">Api</span>
             <span className="cursor-not-allowed opacity-40">Docs</span>
+            <span className="cursor-not-allowed opacity-40">Dashboard</span>
           </nav>
         </div>
       </header>

@@ -64,6 +64,7 @@ export default function FeaturesPage() {
             <Link href="/features" className="text-black">Features</Link>
             <span className="cursor-not-allowed opacity-40">Api</span>
             <span className="cursor-not-allowed opacity-40">Docs</span>
+            <span className="cursor-not-allowed opacity-40">Dashboard</span>
           </nav>
         </div>
       </header>
