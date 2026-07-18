@@ -125,20 +125,17 @@ export async function findCachedEpisode(
   const { baseUrl, apiKey, tableId } = requireConfig();
 
   try {
-    const queryParams = new URLSearchParams({
-      filterBy: JSON.stringify({
-        conjunction: "and",
-        conditions: [
-          {
-            fieldName: "spotify_episode_id",
-            operator: "is",
-            value: episodeId,
-          },
-        ],
-      }),
-      take: "1",
+    const filterJson = JSON.stringify({
+      conjunction: "and",
+      filterSet: [
+        {
+          fieldId: "spotify_episode_id",
+          operator: "is",
+          value: episodeId,
+        },
+      ],
     });
-    const fetchUrl = `${baseUrl}/api/table/${tableId}/record?${queryParams.toString()}`;
+    const fetchUrl = `${baseUrl}/api/table/${tableId}/record?filter=${encodeURIComponent(filterJson)}&take=1`;
     console.log("🌐 [Teable Cache URL]:", fetchUrl);
 
     const res = await fetch(fetchUrl, {
@@ -210,7 +207,6 @@ export async function saveEpisodeRecord(params: {
   };
 
   console.log("🌐 [Teable Save Endpoint]:", RECORD_ENDPOINT);
-  console.log("📋 [Teable Save Headers]:", JSON.stringify(HEADERS, null, 2));
 
   const payload = {
     records: [
