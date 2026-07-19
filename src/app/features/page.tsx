@@ -57,9 +57,9 @@ export default function FeaturesPage() {
             <Link href="/pricing" className="hover:text-black transition-colors">Pricing</Link>
             <span className="cursor-not-allowed opacity-40">Docs</span>
             {session?.user ? (
-              <Link href="/dashboard" className="font-sans text-sm font-medium hover:text-black transition-colors">Dashboard</Link>
+              <Link href="/dashboard" className="font-sans text-sm font-medium text-white bg-black rounded-full px-4 py-1.5 hover:bg-gray-900 transition-colors">Dashboard</Link>
             ) : (
-              <button onClick={() => signIn("google")} className="font-sans text-sm font-medium hover:text-black transition-colors cursor-pointer bg-transparent border-none">Log In</button>
+              <button onClick={() => signIn("google")} className="font-sans text-sm font-medium text-white bg-black rounded-full px-4 py-1.5 hover:bg-gray-900 transition-colors cursor-pointer bg-black border-none">Log In</button>
             )}
           </nav>
         </div>

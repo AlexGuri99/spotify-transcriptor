@@ -91,9 +91,9 @@ export default function PricingPage() {
             <Link href="/pricing" className="text-black">Pricing</Link>
             <span className="cursor-not-allowed opacity-40">Docs</span>
             {session?.user ? (
-              <Link href="/dashboard" className="font-sans text-sm font-medium hover:text-black transition-colors">Dashboard</Link>
+              <Link href="/dashboard" className="font-sans text-sm font-medium text-white bg-black rounded-full px-4 py-1.5 hover:bg-gray-900 transition-colors">Dashboard</Link>
             ) : (
-              <button onClick={() => signIn("google")} className="font-sans text-sm font-medium hover:text-black transition-colors cursor-pointer bg-transparent border-none">Log In</button>
+              <button onClick={() => signIn("google")} className="font-sans text-sm font-medium text-white bg-black rounded-full px-4 py-1.5 hover:bg-gray-900 transition-colors cursor-pointer bg-black border-none">Log In</button>
             )}
           </nav>
         </div>
@@ -101,23 +101,12 @@ export default function PricingPage() {
 
       <main className="mx-auto w-full max-w-6xl flex-1 px-8 py-20">
         <div className="text-center mb-16">
-          <h1 className={`text-4xl md:text-5xl font-bold italic tracking-tight leading-[1.1] text-black ${editorialSerif.className}`}>
+          <h1 className={`text-4xl md:text-5xl font-bold italic tracking-tight leading-[1.1] text-black ${editorialSerif.className} font-editorial`}>
             Simple, transparent pricing
           </h1>
           <p className="font-sans text-lg text-gray-500 mt-4 max-w-2xl mx-auto leading-relaxed">
             Pick the plan that fits how often you transcribe. No hidden fees, no surprises.
           </p>
-        </div>
-
-        {/* Cost breakdown callout */}
-        <div className="max-w-2xl mx-auto mb-16 text-center">
-          <div className="inline-block rounded-2xl border border-gray-100 bg-gray-50/50 px-6 py-4">
-            <p className="font-sans text-sm text-gray-500 leading-relaxed">
-              <span className="font-medium text-gray-700">How pricing works: </span>
-              A typical podcast episode (45 min) costs us ~$0.03 in AI processing.
-              We price plans to be fair — you pay for convenience and volume, not markup.
-            </p>
-          </div>
         </div>
 
         {/* Plan cards */}
