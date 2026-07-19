@@ -1,7 +1,7 @@
 "use client";
 
 import { Newsreader, Inter } from "next/font/google";
-import { Videotape, Sparkles, Search, Clock, Shield, Download } from "lucide-react";
+import { Videotape, Sparkles, Search, Clock, Shield, Download, Mic, BookOpen, Newspaper } from "lucide-react";
 import Link from "next/link";
 import { useSession, signIn } from "next-auth/react";
 
@@ -40,6 +40,24 @@ const features = [
   },
   ];
 
+const useCases = [
+  {
+    icon: Newspaper,
+    title: "Journalism & research",
+    desc: "Quote podcast guests accurately in your articles without re-listening to hours of audio. Search, copy, cite.",
+  },
+  {
+    icon: BookOpen,
+    title: "Content repurposing",
+    desc: "Turn podcast episodes into show notes, blog posts, social threads, or newsletter material in minutes.",
+  },
+  {
+    icon: Mic,
+    title: "Accessibility & study",
+    desc: "Read along while you listen, review complex topics at your own pace, or archive episodes for offline reference.",
+  },
+];
+
 export default function FeaturesPage() {
   const { data: session } = useSession();
   return (
@@ -76,41 +94,57 @@ export default function FeaturesPage() {
           </p>
         </div>
 
-        <div className="text-center mb-20">
-          <div className="inline-block rounded-2xl border border-gray-200 bg-white px-8 py-6 shadow-[0_4px_24px_rgba(0,0,0,0.02)]">
-            <p className="font-sans text-lg text-gray-600 italic leading-relaxed">
-              &ldquo;Other transcribers make you jump through hoops — signups, API keys, monthly limits.
-              Tranzkript just works: paste a link, get a transcript. No friction.&rdquo;
-            </p>
+        <div className="mb-12">
+          <p className="font-sans text-xs font-semibold tracking-widest uppercase text-gray-400 mb-6 text-center">
+            Features
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {features.map((feature) => (
+              <div
+                key={feature.title}
+                className="rounded-2xl border border-gray-200 bg-white p-6 shadow-[0_4px_24px_rgba(0,0,0,0.01)] hover:border-gray-300 transition-colors"
+              >
+                <div className="flex items-start gap-4">
+                  <div className="shrink-0 rounded-xl bg-black/5 p-2.5">
+                    <feature.icon className="h-5 w-5 text-black" />
+                  </div>
+                  <div>
+                    <h3 className="font-sans font-bold text-black">{feature.title}</h3>
+                    <p className="font-sans text-sm text-gray-500 mt-1 leading-relaxed">{feature.desc}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {features.map((feature) => (
-            <div
-              key={feature.title}
-              className="rounded-2xl border border-gray-200 bg-white p-6 shadow-[0_4px_24px_rgba(0,0,0,0.01)] hover:border-gray-300 transition-colors"
-            >
-              <div className="flex items-start gap-4">
-                <div className="shrink-0 rounded-xl bg-black/5 p-2.5">
-                  <feature.icon className="h-5 w-5 text-black" />
+        <div className="mb-16">
+          <p className="font-sans text-xs font-semibold tracking-widest uppercase text-gray-400 mb-6 text-center">
+            Use Cases
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {useCases.map((useCase) => (
+              <div
+                key={useCase.title}
+                className="rounded-2xl border border-gray-200 bg-white p-6 shadow-[0_4px_24px_rgba(0,0,0,0.01)] hover:border-gray-300 transition-colors text-center"
+              >
+                <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-black/5">
+                  <useCase.icon className="h-5 w-5 text-black" />
                 </div>
-                <div>
-                  <h3 className="font-sans font-bold text-black">{feature.title}</h3>
-                  <p className="font-sans text-sm text-gray-500 mt-1 leading-relaxed">{feature.desc}</p>
-                </div>
+                <h3 className="font-sans font-bold text-black">{useCase.title}</h3>
+                <p className="font-sans text-sm text-gray-500 mt-2 leading-relaxed">{useCase.desc}</p>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
 
-        <div className="text-center mt-16">
+        <div className="text-center">
           <Link
-            href="/"
+            href="/pricing"
             className="font-sans inline-flex items-center gap-2 rounded-xl bg-black px-6 py-3.5 text-sm font-medium text-white transition-all hover:bg-gray-900 shadow-sm"
           >
             <Sparkles className="h-4 w-4" />
-            Try it now
+            See pricing
           </Link>
         </div>
       </main>
