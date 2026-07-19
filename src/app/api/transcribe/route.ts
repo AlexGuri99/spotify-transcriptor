@@ -1,4 +1,6 @@
 import { NextRequest } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/auth";
 import * as cheerio from "cheerio";
 import Parser from "rss-parser";
 import OpenAI from "openai";
@@ -58,6 +60,32 @@ const MAX_CONCURRENT_TRANSCRIBERS = 3;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX_REQUESTS = 10;
 const rateLimitMap = new Map<string, number[]>();
+
+/** Daily limit — 3 transcriptions per IP for unauthenticated users */
+const DAILY_LIMIT = 3;
+const dailyUsageMap = new Map<string, { date: string; count: number }>();
+
+function checkDailyLimit(ip: string): boolean {
+  const today = new Date().toISOString().slice(0, 10);
+  const key = `${today}:${ip}`;
+  const entry = dailyUsageMap.get(key);
+  if (!entry || entry.date !== today) {
+    dailyUsageMap.set(key, { date: today, count: 0 });
+    return true;
+  }
+  return entry.count < DAILY_LIMIT;
+}
+
+function incrementDailyUsage(ip: string): void {
+  const today = new Date().toISOString().slice(0, 10);
+  const key = `${today}:${ip}`;
+  const entry = dailyUsageMap.get(key);
+  if (entry && entry.date === today) {
+    entry.count++;
+  } else {
+    dailyUsageMap.set(key, { date: today, count: 1 });
+  }
+}
 
 function isRateLimited(ip: string): boolean {
   const now = Date.now();
@@ -643,6 +671,23 @@ export async function POST(req: NextRequest): Promise<Response> {
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
     ?? req.headers.get("x-real-ip")
     ?? "unknown";
+
+  /* ------------------------------------------------------------------ */
+  /* Daily limit — unauthenticated users get 3 transcriptions per day   */
+  /* ------------------------------------------------------------------ */
+  const session = await getServerSession(authOptions);
+  const isAuthenticated = !!session?.user;
+  if (!isAuthenticated && !checkDailyLimit(ip)) {
+    return Response.json(
+      {
+        type: "daily_limit",
+        error: "You've used all 3 free transcriptions for today.",
+        detail: "Sign in to continue transcribing with unlimited access.",
+      },
+      { status: 429 }
+    );
+  }
+
   if (isRateLimited(ip)) {
     return Response.json(
       { type: "error", error: "Too many requests. Please wait a moment and try again." },
@@ -898,6 +943,11 @@ export async function POST(req: NextRequest): Promise<Response> {
         executionTime: Number(elapsedSeconds),
       });
       console.log("🎉 [Pipeline Sync Complete] Teable write confirmed!");
+
+      if (!isAuthenticated) {
+        incrementDailyUsage(ip);
+        console.log(`[DailyLimit] Incremented for IP ${ip}`);
+      }
 
       await send({
         type: "result",

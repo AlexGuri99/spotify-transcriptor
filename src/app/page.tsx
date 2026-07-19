@@ -50,7 +50,8 @@ type Status =
   | { phase: "idle" }
   | { phase: "processing"; message: string; countdown: number | null }
   | { phase: "done" }
-  | { phase: "error"; error: string; detail?: string };
+  | { phase: "error"; error: string; detail?: string }
+  | { phase: "daily_limit"; error: string; detail?: string };
 
 /* ------------------------------------------------------------------ */
 /* Helpers                                                            */
@@ -118,12 +119,20 @@ export default function HomePage() {
 
       if (!res.ok) {
         let errorMsg = `Server error (HTTP ${res.status})`;
+        let errorDetail: string | undefined;
+        let errorType = "error";
         try {
           const errBody = await res.json();
           if (errBody.error) errorMsg = errBody.error;
+          if (errBody.detail) errorDetail = errBody.detail;
+          if (errBody.type) errorType = errBody.type;
         } catch {}
         if (countdownInterval) clearInterval(countdownInterval);
-        setStatus({ phase: "error", error: errorMsg });
+        if (errorType === "daily_limit") {
+          setStatus({ phase: "daily_limit", error: errorMsg, detail: errorDetail });
+        } else {
+          setStatus({ phase: "error", error: errorMsg, detail: errorDetail });
+        }
         return;
       }
 
@@ -256,6 +265,42 @@ export default function HomePage() {
           </nav>
         </div>
       </header>
+
+      {/* ---- Daily limit modal ---- */}
+      {status.phase === "daily_limit" && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm">
+          <div className="mx-4 w-full max-w-md rounded-2xl border border-gray-200 bg-white p-8 shadow-2xl">
+            <div className="text-center">
+              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-black/5">
+                <Videotape className="h-7 w-7 text-black" />
+              </div>
+              <h2 className="font-sans text-xl font-bold text-black">
+                Free limit reached
+              </h2>
+              <p className="font-sans mt-2 text-sm text-gray-500 leading-relaxed">
+                You&apos;ve used all 3 free transcriptions for today.
+              </p>
+              <p className="font-sans text-sm text-gray-500 leading-relaxed">
+                Sign in to keep transcribing with unlimited access.
+              </p>
+              <div className="mt-6 flex flex-col gap-3">
+                <button
+                  onClick={() => signIn("google")}
+                  className="font-sans rounded-xl bg-black px-6 py-3 text-sm font-medium text-white transition-all hover:bg-gray-900 shadow-sm"
+                >
+                  Sign in with Google
+                </button>
+                <button
+                  onClick={() => setStatus({ phase: "idle" })}
+                  className="font-sans rounded-xl border border-gray-200 px-6 py-3 text-sm font-medium text-gray-500 transition-all hover:border-black hover:text-black"
+                >
+                  Maybe later
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ---- Main Layout Context Container ---- */}
       <main className="mx-auto w-full max-w-6xl flex-1 px-8 py-12 flex flex-col justify-center">
