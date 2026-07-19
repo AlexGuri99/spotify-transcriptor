@@ -87,7 +87,7 @@ export default function PricingPage() {
             </span>
           </Link>
           <nav className="font-sans text-sm font-medium text-gray-500 flex items-center gap-8">
-            <Link href="/features" className="hover:text-black transition-colors">Features</Link>
+            <Link href="/features" className="hover:text-black transition-colors">Product</Link>
             <Link href="/pricing" className="text-black">Pricing</Link>
             <span className="cursor-not-allowed opacity-40">Docs</span>
             {session?.user ? (

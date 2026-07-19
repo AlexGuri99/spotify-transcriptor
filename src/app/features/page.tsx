@@ -71,7 +71,7 @@ export default function FeaturesPage() {
             </span>
           </Link>
           <nav className="font-sans text-sm font-medium text-gray-500 flex items-center gap-8">
-            <Link href="/features" className="text-black">Features</Link>
+            <Link href="/features" className="text-black">Product</Link>
             <Link href="/pricing" className="hover:text-black transition-colors">Pricing</Link>
             <span className="cursor-not-allowed opacity-40">Docs</span>
             {session?.user ? (
@@ -95,8 +95,8 @@ export default function FeaturesPage() {
         </div>
 
         <div className="mb-12">
-          <p className="font-sans text-xs font-semibold tracking-widest uppercase text-gray-400 mb-6 text-center">
-            Features
+          <p className={`font-semibold tracking-wide text-black mb-6 text-center text-lg ${editorialSerif.className}`}>
+            Product
           </p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {features.map((feature) => (
@@ -119,7 +119,7 @@ export default function FeaturesPage() {
         </div>
 
         <div className="mb-16">
-          <p className="font-sans text-xs font-semibold tracking-widest uppercase text-gray-400 mb-6 text-center">
+          <p className={`font-semibold tracking-wide text-black mb-6 text-center text-lg ${editorialSerif.className}`}>
             Use Cases
           </p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
