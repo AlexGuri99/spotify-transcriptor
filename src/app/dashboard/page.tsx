@@ -1,10 +1,10 @@
 "use client";
 
-import { useSession } from "next-auth/react";
+import { useSession, signOut } from "next-auth/react";
 import { redirect } from "next/navigation";
 import { Newsreader, Inter } from "next/font/google";
 import Link from "next/link";
-import { Videotape } from "lucide-react";
+import { Videotape, LogOut } from "lucide-react";
 
 const editorialSerif = Newsreader({
   subsets: ["latin"],
@@ -36,10 +36,10 @@ export default function DashboardPage() {
             </span>
           </Link>
           <nav className="font-sans text-sm font-medium text-gray-500 flex items-center gap-8">
-            <Link href="/features" className="hover:text-black transition-colors">Features</Link>
-            <span className="cursor-not-allowed opacity-40">Pricing</span>
-            <span className="cursor-not-allowed opacity-40">Docs</span>
-            <Link href="/dashboard" className="font-sans text-sm font-medium text-black">Dashboard</Link>
+            <button onClick={() => signOut()} className="flex items-center gap-1.5 hover:text-black transition-colors cursor-pointer bg-transparent border-none">
+              <LogOut className="h-3.5 w-3.5" />
+              Sign Out
+            </button>
           </nav>
         </div>
       </header>

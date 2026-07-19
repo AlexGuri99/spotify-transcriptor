@@ -246,12 +246,12 @@ export default function HomePage() {
           </button>
           <nav className="font-sans text-sm font-medium text-gray-500 flex items-center gap-8">
             <Link href="/features" className="hover:text-black transition-colors">Features</Link>
-            <span className="cursor-not-allowed opacity-40">Pricing</span>
+            <Link href="/pricing" className="hover:text-black transition-colors">Pricing</Link>
             <span className="cursor-not-allowed opacity-40">Docs</span>
             {session?.user ? (
               <Link href="/dashboard" className="font-sans text-sm font-medium hover:text-black transition-colors">Dashboard</Link>
             ) : (
-              <button onClick={() => signIn("google")} className="font-sans text-sm font-medium hover:text-black transition-colors cursor-pointer bg-transparent border-none">Dashboard</button>
+              <button onClick={() => signIn("google")} className="font-sans text-sm font-medium hover:text-black transition-colors cursor-pointer bg-transparent border-none">Log In</button>
             )}
           </nav>
         </div>
