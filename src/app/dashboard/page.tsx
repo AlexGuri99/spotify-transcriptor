@@ -36,7 +36,7 @@ export default function DashboardPage() {
             </span>
           </Link>
           <nav className="font-sans text-sm font-medium text-gray-500 flex items-center gap-8">
-            <button onClick={() => signOut()} className="flex items-center gap-1.5 hover:text-black transition-colors cursor-pointer bg-transparent border-none">
+            <button onClick={() => signOut()} className="flex items-center gap-1.5 text-white bg-black rounded-full px-4 py-1.5 hover:bg-gray-900 transition-colors cursor-pointer border-none">
               <LogOut className="h-3.5 w-3.5" />
               Sign Out
             </button>
