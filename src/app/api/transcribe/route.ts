@@ -12,6 +12,7 @@ import * as os from "os";
 import { Readable } from "stream";
 import { finished } from "stream/promises";
 import { findCachedEpisode, saveEpisodeRecord } from "@/lib/teable";
+import { addTranscription } from "@/lib/usage-tracker";
 
 /* ------------------------------------------------------------------ */
 /* Types                                                             */
@@ -782,7 +783,24 @@ export async function POST(req: NextRequest): Promise<Response> {
           },
         });
 
-        return; /* early exit — finally block handles lock cleanup */
+        /* Track usage for authenticated users */
+      if (isAuthenticated && session?.user?.email) {
+        try {
+          addTranscription(session.user.email, {
+            id: episodeId,
+            episodeTitle: metadata.episodeTitle,
+            showName: metadata.showName,
+            spotifyUrl: trimmedUrl,
+            timestamp: new Date().toISOString(),
+            executionTime: cachedEpisode.executionTime,
+            adFiltered: false,
+          });
+        } catch (e) {
+          console.warn("[Usage] Failed to log cached transcription:", e);
+        }
+      }
+
+      return; /* early exit — finally block handles lock cleanup */
       }
 
       /* ---------------------------------------------------------------- */
@@ -947,6 +965,21 @@ export async function POST(req: NextRequest): Promise<Response> {
       if (!isAuthenticated) {
         incrementDailyUsage(ip);
         console.log(`[DailyLimit] Incremented for IP ${ip}`);
+      } else if (session?.user?.email) {
+        /* Track usage for authenticated users */
+        try {
+          addTranscription(session.user.email, {
+            id: episodeId,
+            episodeTitle: metadata.episodeTitle,
+            showName: metadata.showName,
+            spotifyUrl: trimmedUrl,
+            timestamp: new Date().toISOString(),
+            executionTime: Number(elapsedSeconds),
+            adFiltered,
+          });
+        } catch (e) {
+          console.warn("[Usage] Failed to log transcription:", e);
+        }
       }
 
       await send({
