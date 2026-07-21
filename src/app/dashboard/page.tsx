@@ -17,7 +17,6 @@ import {
   Check,
   Trash2,
   Plus,
-  AlertCircle,
   Clock,
   Zap,
   FileText,
@@ -97,11 +96,10 @@ function maskKey(key: string): string {
 /* Tabs                                                               */
 /* ------------------------------------------------------------------ */
 
-type Tab = "usage" | "history" | "billing" | "api";
+type Tab = "usage" | "billing" | "api";
 
 const TABS: { id: Tab; label: string; icon: React.FC<{ className?: string }> }[] = [
-  { id: "usage", label: "Usage", icon: BarChart3 },
-  { id: "history", label: "History", icon: History },
+  { id: "usage", label: "Usage & History", icon: BarChart3 },
   { id: "billing", label: "Billing", icon: CreditCard },
   { id: "api", label: "API Keys", icon: Key },
 ];
@@ -183,8 +181,7 @@ function DashboardShell({ session }: { session: any }) {
         </div>
 
         {/* Tab content */}
-        {activeTab === "usage" && <UsageTab email={session.user.email!} />}
-        {activeTab === "history" && <HistoryTab email={session.user.email!} />}
+        {activeTab === "usage" && <UsageHistoryTab email={session.user.email!} />}
         {activeTab === "billing" && <BillingTab email={session.user.email!} />}
         {activeTab === "api" && <ApiTab email={session.user.email!} />}
       </main>
@@ -200,106 +197,19 @@ function DashboardShell({ session }: { session: any }) {
 /* Usage Tab                                                          */
 /* ------------------------------------------------------------------ */
 
-function UsageTab({ email: _email }: { email: string }) {
+function UsageHistoryTab({ email: _email }: { email: string }) {
   const [stats, setStats] = useState<UsageStats | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    fetch("/api/dashboard/stats")
-      .then((r) => r.json())
-      .then((data) => {
-        setStats(data);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  }, []);
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <div className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-gray-300 border-t-black" />
-      </div>
-    );
-  }
-
-  if (!stats) {
-    return (
-      <div className="rounded-2xl border border-gray-200 bg-white p-8 text-center">
-        <AlertCircle className="h-8 w-8 text-gray-300 mx-auto mb-3" />
-        <p className="font-sans text-sm text-gray-500">Could not load usage data.</p>
-      </div>
-    );
-  }
-
-  const pct = stats.planLimit > 0 ? Math.round((stats.usedThisMonth / stats.planLimit) * 100) : 0;
-
-  return (
-    <div className="space-y-6">
-      <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-[0_4px_24px_rgba(0,0,0,0.01)]">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="rounded-xl bg-black/5 p-2.5">
-            <Zap className="h-5 w-5 text-black" />
-          </div>
-          <div>
-            <h2 className="font-sans text-lg font-bold text-black">Pod Usage</h2>
-            <p className="font-sans text-xs text-gray-400">This month</p>
-          </div>
-        </div>
-
-        <div className="flex items-baseline gap-2 mb-2">
-          <span className="font-sans text-4xl font-bold text-black">{stats.usedThisMonth}</span>
-          <span className="font-sans text-sm text-gray-400">
-            / {stats.planLimit === Infinity ? "∞" : stats.planLimit} pods used
-          </span>
-        </div>
-
-        <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden mb-3">
-          <div
-            className="h-full bg-black rounded-full transition-all duration-500"
-            style={{ width: `${Math.min(pct, 100)}%` }}
-          />
-        </div>
-
-        <p className="font-sans text-sm text-gray-500">
-          {stats.remaining > 0
-            ? `${stats.remaining} pods remaining this month`
-            : "No pods remaining this month"}
-        </p>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-[0_4px_24px_rgba(0,0,0,0.01)]">
-          <p className="font-sans text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Plan</p>
-          <p className="font-sans text-lg font-bold text-black capitalize">{stats.plan}</p>
-        </div>
-        <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-[0_4px_24px_rgba(0,0,0,0.01)]">
-          <p className="font-sans text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Total Transcriptions</p>
-          <p className="font-sans text-lg font-bold text-black">{stats.total}</p>
-        </div>
-        <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-[0_4px_24px_rgba(0,0,0,0.01)]">
-          <p className="font-sans text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Remaining</p>
-          <p className="font-sans text-lg font-bold text-black">
-            {stats.planLimit === Infinity ? "∞" : stats.remaining}
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* History Tab                                                        */
-/* ------------------------------------------------------------------ */
-
-function HistoryTab({ email: _email }: { email: string }) {
   const [history, setHistory] = useState<TranscriptionRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch("/api/dashboard/history")
-      .then((r) => r.json())
-      .then((data) => {
-        setHistory(data.history || []);
+    Promise.all([
+      fetch("/api/dashboard/stats").then((r) => r.json()),
+      fetch("/api/dashboard/history").then((r) => r.json()),
+    ])
+      .then(([statsData, historyData]) => {
+        setStats(statsData);
+        setHistory(historyData.history || []);
         setLoading(false);
       })
       .catch(() => setLoading(false));
@@ -313,66 +223,111 @@ function HistoryTab({ email: _email }: { email: string }) {
     );
   }
 
-  if (history.length === 0) {
-    return (
-      <div className="rounded-2xl border border-gray-200 bg-white p-12 text-center shadow-[0_4px_24px_rgba(0,0,0,0.01)]">
-        <FileText className="h-10 w-10 text-gray-200 mx-auto mb-4" />
-        <h3 className="font-sans font-bold text-black mb-2">No transcriptions yet</h3>
-        <p className="font-sans text-sm text-gray-500 max-w-md mx-auto leading-relaxed">
-          Your transcription history will appear here. Head back to the home page to transcribe your first episode.
-        </p>
-        <Link
-          href="/"
-          className="font-sans inline-flex items-center gap-2 mt-6 rounded-xl bg-black px-5 py-2.5 text-sm font-medium text-white hover:bg-gray-900 transition-all"
-        >
-          <Videotape className="h-4 w-4" />
-          Transcribe an episode
-        </Link>
-      </div>
-    );
-  }
+  const pct = stats && stats.planLimit > 0 ? Math.round((stats.usedThisMonth / stats.planLimit) * 100) : 0;
 
   return (
-    <div className="space-y-3">
-      {history.map((item) => (
-        <div
-          key={item.id + item.timestamp}
-          className="rounded-2xl border border-gray-200 bg-white p-5 shadow-[0_4px_24px_rgba(0,0,0,0.01)] hover:border-gray-300 transition-all"
-        >
-          <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0 flex-1">
-              <h3 className="font-sans font-bold text-black truncate">
-                {item.episodeTitle}
-              </h3>
-              {item.showName && (
-                <p className="font-sans text-sm text-gray-400 mt-0.5">{item.showName}</p>
-              )}
-              <div className="flex items-center gap-3 mt-2">
-                <span className="font-sans text-xs text-gray-400 flex items-center gap-1">
-                  <Clock className="h-3 w-3" />
-                  {formatDate(item.timestamp)}
-                </span>
-                <span className="font-sans text-xs text-gray-400">
-                  {item.executionTime.toFixed(1)}s
-                </span>
-                {item.adFiltered && (
-                  <span className="font-sans text-[11px] text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
-                    Ad-filtered
-                  </span>
-                )}
-              </div>
+    <div className="space-y-8">
+      {/* Pod usage */}
+      {stats && (
+        <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-[0_4px_24px_rgba(0,0,0,0.01)]">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="rounded-xl bg-black/5 p-2.5">
+              <Zap className="h-5 w-5 text-black" />
             </div>
-            <a
-              href={item.spotifyUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-sans shrink-0 rounded-xl border border-gray-200 p-2.5 text-gray-400 hover:border-black hover:text-black transition-all"
-            >
-              <ExternalLink className="h-4 w-4" />
-            </a>
+            <div>
+              <h2 className="font-sans text-lg font-bold text-black">Pod Usage</h2>
+              <p className="font-sans text-xs text-gray-400">This month</p>
+            </div>
           </div>
+
+          <div className="flex items-baseline gap-2 mb-2">
+            <span className="font-sans text-4xl font-bold text-black">{stats.usedThisMonth}</span>
+            <span className="font-sans text-sm text-gray-400">
+              / {stats.planLimit === Infinity ? "∞" : stats.planLimit} pods used
+            </span>
+          </div>
+
+          <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden mb-3">
+            <div
+              className="h-full bg-black rounded-full transition-all duration-500"
+              style={{ width: `${Math.min(pct, 100)}%` }}
+            />
+          </div>
+
+          <p className="font-sans text-sm text-gray-500">
+            {stats.remaining > 0
+              ? `${stats.remaining} pods remaining this month`
+              : "No pods remaining this month"}
+          </p>
         </div>
-      ))}
+      )}
+
+      {/* History */}
+      <div>
+        <h2 className="font-sans text-lg font-bold text-black mb-4 flex items-center gap-2">
+          <History className="h-5 w-5 text-gray-400" />
+          History
+        </h2>
+
+        {history.length === 0 ? (
+          <div className="rounded-2xl border border-gray-200 bg-white p-12 text-center shadow-[0_4px_24px_rgba(0,0,0,0.01)]">
+            <FileText className="h-10 w-10 text-gray-200 mx-auto mb-4" />
+            <h3 className="font-sans font-bold text-black mb-2">No transcriptions yet</h3>
+            <p className="font-sans text-sm text-gray-500 max-w-md mx-auto leading-relaxed">
+              Your transcription history will appear here. Head back to the home page to transcribe your first episode.
+            </p>
+            <Link
+              href="/"
+              className="font-sans inline-flex items-center gap-2 mt-6 rounded-xl bg-black px-5 py-2.5 text-sm font-medium text-white hover:bg-gray-900 transition-all"
+            >
+              <Videotape className="h-4 w-4" />
+              Transcribe an episode
+            </Link>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {history.map((item) => (
+              <div
+                key={item.id + item.timestamp}
+                className="rounded-2xl border border-gray-200 bg-white p-5 shadow-[0_4px_24px_rgba(0,0,0,0.01)] hover:border-gray-300 transition-all"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0 flex-1">
+                    <h3 className="font-sans font-bold text-black truncate">
+                      {item.episodeTitle}
+                    </h3>
+                    {item.showName && (
+                      <p className="font-sans text-sm text-gray-400 mt-0.5">{item.showName}</p>
+                    )}
+                    <div className="flex items-center gap-3 mt-2">
+                      <span className="font-sans text-xs text-gray-400 flex items-center gap-1">
+                        <Clock className="h-3 w-3" />
+                        {formatDate(item.timestamp)}
+                      </span>
+                      <span className="font-sans text-xs text-gray-400">
+                        {item.executionTime.toFixed(1)}s
+                      </span>
+                      {item.adFiltered && (
+                        <span className="font-sans text-[11px] text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
+                          Ad-filtered
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <a
+                    href={item.spotifyUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-sans shrink-0 rounded-xl border border-gray-200 p-2.5 text-gray-400 hover:border-black hover:text-black transition-all"
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                  </a>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
