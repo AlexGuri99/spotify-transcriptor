@@ -1,9 +1,11 @@
 "use client";
 
+import { useState } from "react";
 import { Newsreader, Inter } from "next/font/google";
 import { Videotape, Sparkles, Search, Clock, Shield, Download, Mic, BookOpen, Newspaper } from "lucide-react";
 import Link from "next/link";
-import { useSession, signIn } from "next-auth/react";
+import { useSession } from "next-auth/react";
+import SignInModal from "@/components/sign-in-modal";
 
 const editorialSerif = Newsreader({
   subsets: ["latin"],
@@ -60,6 +62,7 @@ const useCases = [
 
 export default function FeaturesPage() {
   const { data: session } = useSession();
+  const [showSignIn, setShowSignIn] = useState(false);
   return (
     <div className={`${editorialSerif.variable} ${transcriptSans.variable} font-serif min-h-screen bg-[#FDFDFD] text-[#111111] antialiased flex flex-col`}>
       <header className="border-b border-gray-100 bg-white/80 backdrop-blur-md px-8 py-5 sticky top-0 z-50">
@@ -77,7 +80,7 @@ export default function FeaturesPage() {
             {session?.user ? (
               <Link href="/dashboard" className="font-sans text-sm font-medium text-white bg-black rounded-full px-4 py-1.5 hover:bg-gray-900 transition-colors">Dashboard</Link>
             ) : (
-              <button onClick={() => signIn("google")} className="font-sans text-sm font-medium text-white bg-black rounded-full px-4 py-1.5 hover:bg-gray-900 transition-colors cursor-pointer bg-black border-none">Log In</button>
+              <button onClick={() => setShowSignIn(true)} className="font-sans text-sm font-medium text-white bg-black rounded-full px-4 py-1.5 hover:bg-gray-900 transition-colors cursor-pointer bg-black border-none">Log In</button>
             )}
           </nav>
         </div>
@@ -152,6 +155,8 @@ export default function FeaturesPage() {
       <footer className="border-t border-gray-100 bg-white px-8 py-5 text-center font-sans text-[11px] font-medium text-gray-400">
         Not affiliated with Spotify Corporation · Made by Alex Gurinovich
       </footer>
+
+      <SignInModal open={showSignIn} onClose={() => setShowSignIn(false)} />
     </div>
   );
 }

@@ -5,8 +5,9 @@ import { Newsreader, Inter } from "next/font/google";
 import { Videotape } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
-import { useSession, signIn } from "next-auth/react";
+import { useSession } from "next-auth/react";
 import iphonePic from "@/assets/iphone.png";
+import SignInModal from "@/components/sign-in-modal";
 
 // Load the high-contrast editorial serif to match the design aesthetic
 const editorialSerif = Newsreader({
@@ -73,6 +74,7 @@ function segmentKey(seg: TranscriptSegment, i: number): string {
 
 export default function HomePage() {
   const { data: session } = useSession();
+  const [showSignIn, setShowSignIn] = useState(false);
   const [url, setUrl] = useState("");
   const [filterAds, setFilterAds] = useState(false);
   const [showTimestamps, setShowTimestamps] = useState(true);
@@ -260,7 +262,7 @@ export default function HomePage() {
             {session?.user ? (
               <Link href="/dashboard" className="font-sans text-sm font-medium text-white bg-black rounded-full px-4 py-1.5 hover:bg-gray-900 transition-colors">Dashboard</Link>
             ) : (
-              <button onClick={() => signIn("google")} className="font-sans text-sm font-medium text-white bg-black rounded-full px-4 py-1.5 hover:bg-gray-900 transition-colors cursor-pointer bg-black border-none">Log In</button>
+              <button onClick={() => setShowSignIn(true)} className="font-sans text-sm font-medium text-white bg-black rounded-full px-4 py-1.5 hover:bg-gray-900 transition-colors cursor-pointer bg-black border-none">Log In</button>
             )}
           </nav>
         </div>
@@ -285,7 +287,7 @@ export default function HomePage() {
               </p>
               <div className="mt-6 flex flex-col gap-3">
                 <button
-                  onClick={() => signIn("google")}
+                  onClick={() => setShowSignIn(true)}
                   className="font-sans rounded-xl bg-black px-6 py-3 text-sm font-medium text-white transition-all hover:bg-gray-900 shadow-sm"
                 >
                   Sign in with Google
@@ -514,6 +516,8 @@ export default function HomePage() {
       <footer className="border-t border-gray-100 bg-white px-8 py-5 text-center font-sans text-[11px] font-medium text-gray-400">
         Not affiliated with Spotify Corporation · Made by Alex Gurinovich
       </footer>
+
+      <SignInModal open={showSignIn} onClose={() => setShowSignIn(false)} />
     </div>
   );
 }

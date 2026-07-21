@@ -4,7 +4,8 @@ import { useState } from "react";
 import { Newsreader, Inter } from "next/font/google";
 import { Videotape, Check, Sparkles, Zap, Sliders } from "lucide-react";
 import Link from "next/link";
-import { useSession, signIn } from "next-auth/react";
+import { useSession } from "next-auth/react";
+import SignInModal from "@/components/sign-in-modal";
 
 const editorialSerif = Newsreader({
   subsets: ["latin"],
@@ -26,6 +27,7 @@ function getProTier(pods: number): { pricePerPod: number; label: string } {
 
 export default function PricingPage() {
   const { data: session } = useSession();
+  const [showSignIn, setShowSignIn] = useState(false);
   const [proPods, setProPods] = useState(30);
   const tier = getProTier(proPods);
   const proTotal = (proPods * tier.pricePerPod).toFixed(2);
@@ -64,7 +66,7 @@ export default function PricingPage() {
             {session?.user ? (
               <Link href="/dashboard" className="font-sans text-sm font-medium text-white bg-black rounded-full px-4 py-1.5 hover:bg-gray-900 transition-colors">Dashboard</Link>
             ) : (
-              <button onClick={() => signIn("google")} className="font-sans text-sm font-medium text-white bg-black rounded-full px-4 py-1.5 hover:bg-gray-900 transition-colors cursor-pointer bg-black border-none">Log In</button>
+              <button onClick={() => setShowSignIn(true)} className="font-sans text-sm font-medium text-white bg-black rounded-full px-4 py-1.5 hover:bg-gray-900 transition-colors cursor-pointer bg-black border-none">Log In</button>
             )}
           </nav>
         </div>
@@ -175,7 +177,7 @@ export default function PricingPage() {
             </ul>
 
             <button
-              onClick={() => session?.user ? undefined : signIn("google")}
+              onClick={() => session?.user ? undefined : setShowSignIn(true)}
               className="font-sans block w-full text-center rounded-xl bg-black px-6 py-3 text-sm font-medium text-white hover:bg-gray-900 transition-all shadow-sm"
             >
               Buy credits
@@ -266,7 +268,7 @@ export default function PricingPage() {
             </ul>
 
             <button
-              onClick={() => session?.user ? undefined : signIn("google")}
+              onClick={() => session?.user ? undefined : setShowSignIn(true)}
               className="font-sans block w-full text-center rounded-xl border border-gray-200 px-6 py-3 text-sm font-medium text-gray-700 hover:border-black hover:text-black transition-all"
             >
               Subscribe
@@ -287,6 +289,8 @@ export default function PricingPage() {
       <footer className="border-t border-gray-100 bg-white px-8 py-5 text-center font-sans text-[11px] font-medium text-gray-400">
         Not affiliated with Spotify Corporation · Made by Alex Gurinovich
       </footer>
+
+      <SignInModal open={showSignIn} onClose={() => setShowSignIn(false)} />
     </div>
   );
 }
