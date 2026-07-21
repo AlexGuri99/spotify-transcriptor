@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef, FormEvent } from "react";
 import { useSession, signOut } from "next-auth/react";
 import { redirect } from "next/navigation";
 import { Newsreader, Inter } from "next/font/google";
@@ -20,6 +20,7 @@ import {
   Clock,
   Zap,
   FileText,
+  Sparkles,
 } from "lucide-react";
 
 const editorialSerif = Newsreader({
@@ -96,10 +97,10 @@ function maskKey(key: string): string {
 /* Tabs                                                               */
 /* ------------------------------------------------------------------ */
 
-type Tab = "usage" | "billing" | "api";
+type Tab = "workspace" | "billing" | "api";
 
 const TABS: { id: Tab; label: string; icon: React.FC<{ className?: string }> }[] = [
-  { id: "usage", label: "Usage & History", icon: BarChart3 },
+  { id: "workspace", label: "Workspace", icon: BarChart3 },
   { id: "billing", label: "Billing", icon: CreditCard },
   { id: "api", label: "API Keys", icon: Key },
 ];
@@ -125,7 +126,7 @@ export default function DashboardPage() {
 /* ------------------------------------------------------------------ */
 
 function DashboardShell({ session }: { session: any }) {
-  const [activeTab, setActiveTab] = useState<Tab>("usage");
+  const [activeTab, setActiveTab] = useState<Tab>("workspace");
 
   return (
     <div className={`${editorialSerif.variable} ${transcriptSans.variable} font-serif min-h-screen bg-[#FDFDFD] text-[#111111] antialiased flex flex-col`}>
@@ -181,7 +182,7 @@ function DashboardShell({ session }: { session: any }) {
         </div>
 
         {/* Tab content */}
-        {activeTab === "usage" && <UsageHistoryTab email={session.user.email!} />}
+        {activeTab === "workspace" && <WorkspaceTab email={session.user.email!} />}
         {activeTab === "billing" && <BillingTab email={session.user.email!} />}
         {activeTab === "api" && <ApiTab email={session.user.email!} />}
       </main>
@@ -194,13 +195,62 @@ function DashboardShell({ session }: { session: any }) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Usage Tab                                                          */
+/* Types for transcription form                                       */
 /* ------------------------------------------------------------------ */
 
-function UsageHistoryTab({ email: _email }: { email: string }) {
+interface TranscriptSegment {
+  start: number;
+  end: number;
+  text: string;
+}
+
+interface Metadata {
+  episodeTitle: string;
+  showName: string;
+}
+
+interface TranscriptionResult {
+  metadata: Metadata;
+  rssFeedUrl: string | null;
+  transcript: string;
+  segments: TranscriptSegment[];
+  adFiltered: boolean;
+  executionTime?: number;
+}
+
+type Status =
+  | { phase: "idle" }
+  | { phase: "processing"; message: string; countdown: number | null }
+  | { phase: "done" }
+  | { phase: "error"; error: string; detail?: string };
+
+function formatTime(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+function segmentKey(seg: TranscriptSegment, i: number): string {
+  return `${seg.start}-${seg.end}-${i}`;
+}
+
+/* ------------------------------------------------------------------ */
+/* Workspace Tab                                                      */
+/* ------------------------------------------------------------------ */
+
+function WorkspaceTab({ email: _email }: { email: string }) {
+  const [url, setUrl] = useState("");
+  const [filterAds, setFilterAds] = useState(false);
+  const [showTimestamps, setShowTimestamps] = useState(true);
+  const [status, setStatus] = useState<Status>({ phase: "idle" });
+  const [result, setResult] = useState<TranscriptionResult | null>(null);
+  const [activeSegmentIndex, setActiveSegmentIndex] = useState<number | null>(null);
   const [stats, setStats] = useState<UsageStats | null>(null);
   const [history, setHistory] = useState<TranscriptionRecord[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const transcriptRef = useRef<HTMLDivElement>(null);
+  const pollingRef = useRef<number | null>(null);
 
   useEffect(() => {
     Promise.all([
@@ -215,6 +265,130 @@ function UsageHistoryTab({ email: _email }: { email: string }) {
       .catch(() => setLoading(false));
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (pollingRef.current !== null) {
+        clearInterval(pollingRef.current);
+      }
+    };
+  }, []);
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    const trimmed = url.trim();
+    if (!trimmed) return;
+
+    setResult(null);
+    setActiveSegmentIndex(null);
+    setStatus({ phase: "processing", message: "Starting...", countdown: null });
+
+    let countdownInterval: ReturnType<typeof setInterval> | null = null;
+    let gotResult = false;
+
+    try {
+      const res = await fetch("/api/transcribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sourceMode: "spotify", url: trimmed, filterAds }),
+      });
+
+      if (!res.ok) {
+        let errorMsg = `Server error (HTTP ${res.status})`;
+        let errorDetail: string | undefined;
+        try {
+          const errBody = await res.json();
+          if (errBody.error) errorMsg = errBody.error;
+          if (errBody.detail) errorDetail = errBody.detail;
+        } catch {}
+        if (countdownInterval) clearInterval(countdownInterval);
+        setStatus({ phase: "error", error: errorMsg, detail: errorDetail });
+        return;
+      }
+
+      if (!res.body) throw new Error("Response body is empty");
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const parsed = JSON.parse(line);
+            if (parsed.type === "status") {
+              setStatus({ phase: "processing", message: parsed.message, countdown: null });
+            } else if (parsed.type === "chunks") {
+              const count: number = parsed.count;
+              const seconds = Math.ceil(count * 0.45) + 5;
+              setStatus({ phase: "processing", message: `Estimated transcription ${seconds}s...`, countdown: seconds });
+              if (countdownInterval) clearInterval(countdownInterval);
+              countdownInterval = setInterval(() => {
+                setStatus((prev) => {
+                  if (prev.phase !== "processing" || prev.countdown === null) return prev;
+                  const next = prev.countdown - 1;
+                  if (next <= 0) {
+                    if (countdownInterval) clearInterval(countdownInterval);
+                    return { ...prev, countdown: 0, message: "Estimated transcription 0s..." };
+                  }
+                  return { ...prev, countdown: next, message: `Estimated transcription ${next}s...` };
+                });
+              }, 1000);
+            } else if (parsed.type === "result") {
+              gotResult = true;
+              if (countdownInterval) clearInterval(countdownInterval);
+              setResult(parsed.data as TranscriptionResult);
+              setStatus({ phase: "done" });
+              // Refresh stats & history
+              Promise.all([
+                fetch("/api/dashboard/stats").then((r) => r.json()),
+                fetch("/api/dashboard/history").then((r) => r.json()),
+              ]).then(([s, h]) => {
+                setStats(s);
+                setHistory(h.history || []);
+              });
+            } else if (parsed.type === "error") {
+              gotResult = true;
+              if (countdownInterval) clearInterval(countdownInterval);
+              setStatus({ phase: "error", error: parsed.error, detail: parsed.detail });
+            }
+          } catch {}
+        }
+      }
+      if (!gotResult) {
+        if (countdownInterval) clearInterval(countdownInterval);
+        setStatus({ phase: "error", error: "Connection closed before transcription completed." });
+      }
+    } catch (err: any) {
+      if (countdownInterval) clearInterval(countdownInterval);
+      setStatus({ phase: "error", error: err?.message ?? "Network error — is the server running?" });
+    }
+  }
+
+  function handleSegmentClick(index: number) {
+    setActiveSegmentIndex(index);
+    const seg = result?.segments[index];
+    if (seg && transcriptRef.current) {
+      const el = transcriptRef.current.children[index] as HTMLElement | undefined;
+      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }
+
+  function handleReset() {
+    setUrl("");
+    setResult(null);
+    setActiveSegmentIndex(null);
+    setStatus({ phase: "idle" });
+  }
+
+  const isLoading = status.phase === "processing";
+  const pct = stats && stats.planLimit > 0 ? Math.round((stats.usedThisMonth / stats.planLimit) * 100) : 0;
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -223,44 +397,166 @@ function UsageHistoryTab({ email: _email }: { email: string }) {
     );
   }
 
-  const pct = stats && stats.planLimit > 0 ? Math.round((stats.usedThisMonth / stats.planLimit) * 100) : 0;
-
   return (
     <div className="space-y-8">
-      {/* Pod usage */}
-      {stats && (
-        <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-[0_4px_24px_rgba(0,0,0,0.01)]">
-          <div className="flex items-center gap-3 mb-6">
+      {/* Top row: form left, pod usage right */}
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">
+        {/* Transcription form */}
+        <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-[0_4px_24px_rgba(0,0,0,0.01)]">
+          <div className="flex items-center gap-3 mb-5">
             <div className="rounded-xl bg-black/5 p-2.5">
-              <Zap className="h-5 w-5 text-black" />
+              <Sparkles className="h-5 w-5 text-black" />
             </div>
             <div>
-              <h2 className="font-sans text-lg font-bold text-black">Pod Usage</h2>
-              <p className="font-sans text-xs text-gray-400">This month</p>
+              <h2 className="font-sans text-lg font-bold text-black">New Transcription</h2>
+              <p className="font-sans text-xs text-gray-400">Paste a Spotify episode URL</p>
             </div>
           </div>
 
-          <div className="flex items-baseline gap-2 mb-2">
-            <span className="font-sans text-4xl font-bold text-black">{stats.usedThisMonth}</span>
-            <span className="font-sans text-sm text-gray-400">
-              / {stats.planLimit === Infinity ? "∞" : stats.planLimit} pods used
-            </span>
-          </div>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="flex flex-col sm:flex-row gap-3">
+              <input
+                type="url"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder="Paste a Spotify episode URL..."
+                className="font-sans flex-1 rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-[#111111] placeholder-gray-400 transition-all focus:border-black focus:outline-none focus:ring-1 focus:ring-black/10 disabled:opacity-50"
+                disabled={isLoading}
+              />
+              <button
+                type="submit"
+                disabled={isLoading || !url.trim()}
+                className="font-sans flex items-center justify-center gap-2 rounded-xl bg-black px-5 py-3 text-sm font-medium text-white hover:bg-gray-900 transition-all disabled:cursor-not-allowed disabled:opacity-30 whitespace-nowrap shadow-sm"
+              >
+                {isLoading ? (
+                  <>
+                    <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white/20 border-t-white" />
+                    Processing...
+                  </>
+                ) : (
+                  "Transcribe"
+                )}
+              </button>
+            </div>
 
-          <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden mb-3">
-            <div
-              className="h-full bg-black rounded-full transition-all duration-500"
-              style={{ width: `${Math.min(pct, 100)}%` }}
-            />
-          </div>
+            {status.phase === "processing" && (
+              <div className="font-mono text-xs text-gray-400 flex items-center gap-2">
+                <span className="inline-block h-1.5 w-1.5 animate-ping rounded-full bg-black" />
+                {status.message}
+              </div>
+            )}
 
-          <p className="font-sans text-sm text-gray-500">
-            {stats.remaining > 0
-              ? `${stats.remaining} pods remaining this month`
-              : "No pods remaining this month"}
-          </p>
+            {status.phase === "error" && (
+              <div className="font-sans rounded-xl border border-red-100 bg-red-50/40 px-4 py-3">
+                <p className="text-xs font-medium text-red-600">{status.error}</p>
+                {status.detail && (
+                  <p className="mt-1 text-[11px] text-red-400 leading-normal">{status.detail}</p>
+                )}
+              </div>
+            )}
+          </form>
+
+          {/* Inline result */}
+          {result && (
+            <div className="mt-4 pt-4 border-t border-gray-100">
+              <div className="flex items-center justify-between mb-3">
+                <div className="min-w-0 flex-1 mr-4">
+                  <p className="font-sans text-sm font-bold text-black truncate">{result.metadata.episodeTitle}</p>
+                  <p className="font-sans text-xs text-gray-400">
+                    {result.executionTime?.toFixed(1)}s
+                    {result.adFiltered && " · Ad-filtered"}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={() => {
+                      const content = showTimestamps && result.segments.length > 0
+                        ? result.segments.map((seg) => `[${formatTime(seg.start)}] ${seg.text}`).join("\n")
+                        : result.transcript;
+                      const blob = new Blob([content], { type: "text/plain" });
+                      const a = document.createElement("a");
+                      a.href = URL.createObjectURL(blob);
+                      a.download = `${result.metadata.episodeTitle.replace(/[^a-zA-Z0-9 ]/g, "")}.txt`;
+                      a.click();
+                      URL.revokeObjectURL(a.href);
+                    }}
+                    className="font-sans rounded-xl border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-500 hover:border-black hover:text-black transition-all"
+                  >
+                    Download TXT ↓
+                  </button>
+                  <button
+                    onClick={() => setShowTimestamps((prev) => !prev)}
+                    className="font-sans rounded-xl border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-500 hover:border-black hover:text-black transition-all"
+                  >
+                    {showTimestamps ? "Hide TS" : "Show TS"}
+                  </button>
+                </div>
+              </div>
+              <div
+                ref={transcriptRef}
+                className="font-sans max-h-[40vh] space-y-1 overflow-y-auto pr-2 rounded-xl bg-gray-50 p-4"
+              >
+                {result.segments.length === 0 ? (
+                  <p className="text-sm leading-relaxed text-gray-800">{result.transcript}</p>
+                ) : (
+                  result.segments.map((seg, i) => (
+                    <button
+                      key={segmentKey(seg, i)}
+                      onClick={() => handleSegmentClick(i)}
+                      className={`flex w-full gap-3 rounded-lg px-3 py-2 text-left transition-all ${activeSegmentIndex === i
+                        ? "bg-[#FAFABA]/60 border-l-2 border-black"
+                        : "hover:bg-white"
+                      }`}
+                    >
+                      {showTimestamps && (
+                        <span className="mt-0.5 shrink-0 font-mono text-xs font-bold text-gray-400">
+                          [{formatTime(seg.start)}]
+                        </span>
+                      )}
+                      <span className="text-sm leading-relaxed text-[#222222]">{seg.text}</span>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
         </div>
-      )}
+
+        {/* Pod usage */}
+        {stats && (
+          <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-[0_4px_24px_rgba(0,0,0,0.01)] h-fit">
+            <div className="flex items-center gap-3 mb-5">
+              <div className="rounded-xl bg-black/5 p-2.5">
+                <Zap className="h-5 w-5 text-black" />
+              </div>
+              <div>
+                <h2 className="font-sans text-lg font-bold text-black">Pod Usage</h2>
+                <p className="font-sans text-xs text-gray-400">This month</p>
+              </div>
+            </div>
+
+            <div className="flex items-baseline gap-1 mb-2">
+              <span className="font-sans text-3xl font-bold text-black">{stats.usedThisMonth}</span>
+              <span className="font-sans text-sm text-gray-400">
+                / {stats.planLimit === Infinity ? "∞" : stats.planLimit}
+              </span>
+            </div>
+
+            <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden mb-3">
+              <div
+                className="h-full bg-black rounded-full transition-all duration-500"
+                style={{ width: `${Math.min(pct, 100)}%` }}
+              />
+            </div>
+
+            <p className="font-sans text-xs text-gray-500">
+              {stats.remaining > 0
+                ? `${stats.remaining} pods remaining`
+                : "No pods remaining"}
+            </p>
+          </div>
+        )}
+      </div>
 
       {/* History */}
       <div>
@@ -274,15 +570,8 @@ function UsageHistoryTab({ email: _email }: { email: string }) {
             <FileText className="h-10 w-10 text-gray-200 mx-auto mb-4" />
             <h3 className="font-sans font-bold text-black mb-2">No transcriptions yet</h3>
             <p className="font-sans text-sm text-gray-500 max-w-md mx-auto leading-relaxed">
-              Your transcription history will appear here. Head back to the home page to transcribe your first episode.
+              Paste a Spotify episode URL above to get started.
             </p>
-            <Link
-              href="/"
-              className="font-sans inline-flex items-center gap-2 mt-6 rounded-xl bg-black px-5 py-2.5 text-sm font-medium text-white hover:bg-gray-900 transition-all"
-            >
-              <Videotape className="h-4 w-4" />
-              Transcribe an episode
-            </Link>
           </div>
         ) : (
           <div className="space-y-3">
@@ -293,9 +582,7 @@ function UsageHistoryTab({ email: _email }: { email: string }) {
               >
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0 flex-1">
-                    <h3 className="font-sans font-bold text-black truncate">
-                      {item.episodeTitle}
-                    </h3>
+                    <h3 className="font-sans font-bold text-black truncate">{item.episodeTitle}</h3>
                     {item.showName && (
                       <p className="font-sans text-sm text-gray-400 mt-0.5">{item.showName}</p>
                     )}
@@ -304,13 +591,9 @@ function UsageHistoryTab({ email: _email }: { email: string }) {
                         <Clock className="h-3 w-3" />
                         {formatDate(item.timestamp)}
                       </span>
-                      <span className="font-sans text-xs text-gray-400">
-                        {item.executionTime.toFixed(1)}s
-                      </span>
+                      <span className="font-sans text-xs text-gray-400">{item.executionTime.toFixed(1)}s</span>
                       {item.adFiltered && (
-                        <span className="font-sans text-[11px] text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
-                          Ad-filtered
-                        </span>
+                        <span className="font-sans text-[11px] text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">Ad-filtered</span>
                       )}
                     </div>
                   </div>
