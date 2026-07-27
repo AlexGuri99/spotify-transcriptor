@@ -786,14 +786,12 @@ export async function POST(req: NextRequest): Promise<Response> {
         /* Track usage for authenticated users */
       if (isAuthenticated && session?.user?.email) {
         try {
-          addTranscription(session.user.email, {
+          await addTranscription(session.user.email, {
             id: episodeId,
             episodeTitle: metadata.episodeTitle,
-            showName: metadata.showName,
             spotifyUrl: trimmedUrl,
             timestamp: new Date().toISOString(),
             executionTime: cachedEpisode.executionTime,
-            adFiltered: false,
           });
         } catch (e) {
           console.warn("[Usage] Failed to log cached transcription:", e);
@@ -956,7 +954,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       console.log("📡 [Pipeline Sync Complete] Safely committing records straight to Teable...");
       await saveEpisodeRecord({
         episodeId,
-        title: metadata.episodeTitle,
+        episodeTitle: metadata.episodeTitle,
         segments: finalSegments,
         executionTime: Number(elapsedSeconds),
       });
@@ -968,14 +966,12 @@ export async function POST(req: NextRequest): Promise<Response> {
       } else if (session?.user?.email) {
         /* Track usage for authenticated users */
         try {
-          addTranscription(session.user.email, {
+          await addTranscription(session.user.email, {
             id: episodeId,
             episodeTitle: metadata.episodeTitle,
-            showName: metadata.showName,
             spotifyUrl: trimmedUrl,
             timestamp: new Date().toISOString(),
             executionTime: Number(elapsedSeconds),
-            adFiltered,
           });
         } catch (e) {
           console.warn("[Usage] Failed to log transcription:", e);

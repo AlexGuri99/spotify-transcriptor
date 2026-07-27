@@ -9,7 +9,7 @@ export async function GET(_req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const history = getTranscriptionHistory(session.user.email);
+  const history = await getTranscriptionHistory(session.user.email);
 
   return NextResponse.json({ history });
 }

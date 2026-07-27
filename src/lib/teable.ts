@@ -3,7 +3,7 @@
 /* ------------------------------------------------------------------ */
 /* Table schema:
  *   spotify_episode_id  — Primary text key (22-char Spotify ID)
- *   title               — Text (episode title from oEmbed)
+ *   episodeTitle        — Text (episode title from oEmbed)
  *   segments            — Long Text (JSON-stringified TranscriptSegment[])
  *   execution_time      — Number (seconds the Whisper pipeline took)
  * ------------------------------------------------------------------ */
@@ -84,7 +84,7 @@ function parseSegmentsJson(raw: string): TranscriptSegment[] | null {
  */
 function recordToCachedData(record: any): CachedEpisodeData | null {
   const fields: Record<string, unknown> = record?.fields ?? {};
-  const title: unknown = fields.title;
+  const title: unknown = fields.episodeTitle;
   const segmentsRaw: unknown = fields.segments;
   const executionTime: unknown = fields.execution_time;
 
@@ -162,7 +162,7 @@ export async function findCachedEpisode(
     }
 
     console.log(
-      `✅ [Teable Cache Hit] Found transaction match for episode: "${data.records[0].fields.title}"`
+      `✅ [Teable Cache Hit] Found transaction match for episode: "${data.records[0].fields.episodeTitle}"`
     );
     return recordToCachedData(record);
   } catch (error) {
@@ -184,13 +184,13 @@ export async function findCachedEpisode(
  */
 export async function saveEpisodeRecord(params: {
   episodeId: string;
-  title: string;
+  episodeTitle: string;
   segments: TranscriptSegment[];
   executionTime: number;
 }): Promise<void> {
   console.log("📦 [Teable Save Attempt] Preparing payload structure for:", {
     episodeId: params.episodeId,
-    title: params.title,
+    episodeTitle: params.episodeTitle,
     segmentCount: params.segments?.length,
     executionTime: params.executionTime,
   });
@@ -213,7 +213,7 @@ export async function saveEpisodeRecord(params: {
       {
         fields: {
           spotify_episode_id: params.episodeId,
-          title: params.title,
+          episodeTitle: params.episodeTitle,
           segments: JSON.stringify(params.segments),
           execution_time: params.executionTime,
         },

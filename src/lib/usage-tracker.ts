@@ -1,5 +1,9 @@
-import fs from "fs";
-import path from "path";
+/* ------------------------------------------------------------------ */
+/* Teable-based user & transcription storage                           */
+/* ------------------------------------------------------------------ */
+/* Users table:      email, passwordHash, plan, creditsRemaining, provider */
+/* Transcripts table: email, spotify_episode_id, execution_time, episodeTitle, segments */
+/* ------------------------------------------------------------------ */
 
 /* ------------------------------------------------------------------ */
 /* Types                                                              */
@@ -8,27 +12,17 @@ import path from "path";
 export interface TranscriptionRecord {
   id: string;
   episodeTitle: string;
-  showName: string;
   spotifyUrl: string;
   timestamp: string;
   executionTime: number;
-  adFiltered: boolean;
 }
 
 export interface UserData {
   email: string;
-  name: string;
+  passwordHash?: string;
   plan: "free" | "credits" | "pro";
   creditsRemaining: number;
-  transcriptions: TranscriptionRecord[];
-  apiKeys: ApiKey[];
-}
-
-export interface ApiKey {
-  key: string;
-  label: string;
-  created: string;
-  lastUsed: string | null;
+  provider: "credentials" | "google" | "github" | "";
 }
 
 /* ------------------------------------------------------------------ */
@@ -36,172 +30,284 @@ export interface ApiKey {
 /* ------------------------------------------------------------------ */
 
 const FREE_PODS_PER_MONTH = 10;
-const DATA_FILE = path.join(process.cwd(), "user-data.json");
 
-/* ------------------------------------------------------------------ */
-/* Storage helpers                                                    */
-/* ------------------------------------------------------------------ */
+const TEABLE_BASE_URL: string | undefined = process.env.TEABLE_BASE_URL;
+const TEABLE_API_KEY: string | undefined = process.env.TEABLE_API_KEY;
+const TEABLE_USERS_TABLE_ID: string | undefined = process.env.TEABLE_USERS_TABLE_ID;
+const TEABLE_TRANSCRIPTS_TABLE_ID: string | undefined = process.env.TEABLE_TABLE_ID;
 
-function readAllData(): Record<string, UserData> {
-  try {
-    if (fs.existsSync(DATA_FILE)) {
-      const raw = fs.readFileSync(DATA_FILE, "utf-8");
-      return JSON.parse(raw);
-    }
-  } catch {
-    // Corrupted file — start fresh
+function requireConfig() {
+  if (!TEABLE_BASE_URL || !TEABLE_API_KEY) {
+    throw new Error("Teable is not configured. Set TEABLE_BASE_URL and TEABLE_API_KEY.");
   }
-  return {};
-}
-
-function writeAllData(data: Record<string, UserData>): void {
-  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), "utf-8");
-}
-
-function getUserKey(email: string): string {
-  return email.toLowerCase().trim();
+  return { baseUrl: TEABLE_BASE_URL, apiKey: TEABLE_API_KEY };
 }
 
 /* ------------------------------------------------------------------ */
-/* Public API                                                         */
+/* Teable API helpers                                                 */
 /* ------------------------------------------------------------------ */
 
-export function getUserData(email: string): UserData {
-  const all = readAllData();
-  const key = getUserKey(email);
-  if (!all[key]) {
-    all[key] = {
-      email: email.toLowerCase(),
-      name: "",
-      plan: "free",
-      creditsRemaining: 0,
-      transcriptions: [],
-      apiKeys: [],
+async function findRecordByEmail(tableId: string, email: string): Promise<{ id: string; fields: Record<string, unknown> } | null> {
+  const { baseUrl, apiKey } = requireConfig();
+  const normalizedEmail = email.toLowerCase().trim();
+
+  const filter = JSON.stringify({
+    conjunction: "and",
+    filterSet: [{ fieldId: "email", operator: "is", value: normalizedEmail }],
+  });
+
+  const url = `${baseUrl}/api/table/${tableId}/record?filter=${encodeURIComponent(filter)}&take=1&fieldKeyType=name`;
+
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" },
+    signal: AbortSignal.timeout(8_000),
+  });
+
+  if (!res.ok) return null;
+  const data: any = await res.json();
+  return data?.records?.[0] ?? null;
+}
+
+async function createRecord(tableId: string, fields: Record<string, unknown>): Promise<string | null> {
+  const { baseUrl, apiKey } = requireConfig();
+
+  const res = await fetch(`${baseUrl}/api/table/${tableId}/record`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({
+      records: [{ fields }],
+      fieldKeyType: "name",
+      typecast: true,
+    }),
+    signal: AbortSignal.timeout(8_000),
+  });
+
+  if (!res.ok) return null;
+  const data: any = await res.json();
+  return data?.records?.[0]?.id ?? null;
+}
+
+async function updateRecord(tableId: string, recordId: string, fields: Record<string, unknown>): Promise<boolean> {
+  const { baseUrl, apiKey } = requireConfig();
+
+  const res = await fetch(`${baseUrl}/api/table/${tableId}/record`, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({
+      records: [{ id: recordId, fields }],
+      fieldKeyType: "name",
+      typecast: true,
+    }),
+    signal: AbortSignal.timeout(8_000),
+  });
+
+  return res.ok;
+}
+
+/* ------------------------------------------------------------------ */
+/* Public API — Users                                                 */
+/* ------------------------------------------------------------------ */
+
+export async function getUserData(email: string): Promise<UserData> {
+  const { baseUrl, apiKey } = requireConfig();
+  if (!TEABLE_USERS_TABLE_ID) throw new Error("TEABLE_USERS_TABLE_ID not set");
+
+  const record = await findRecordByEmail(TEABLE_USERS_TABLE_ID, email);
+  if (record) {
+    return {
+      email: (record.fields.email as string) ?? email.toLowerCase(),
+      passwordHash: (record.fields.passwordHash as string) ?? undefined,
+      plan: (record.fields.plan as "free" | "credits" | "pro") ?? "free",
+      creditsRemaining: (record.fields.creditsRemaining as number) ?? 0,
+      provider: (record.fields.provider as "credentials" | "google" | "github" | "") ?? "",
     };
-    writeAllData(all);
   }
-  return all[key];
+
+  // Auto-create user with default values
+  const normalizedEmail = email.toLowerCase().trim();
+  const fields: Record<string, unknown> = {
+    email: normalizedEmail,
+    plan: "free",
+    creditsRemaining: 0,
+    provider: "",
+  };
+  await createRecord(TEABLE_USERS_TABLE_ID, fields);
+
+  return {
+    email: normalizedEmail,
+    plan: "free",
+    creditsRemaining: 0,
+    provider: "",
+  };
 }
 
-export function upsertUser(email: string, name: string): UserData {
-  const all = readAllData();
-  const key = getUserKey(email);
-  if (!all[key]) {
-    all[key] = {
-      email: email.toLowerCase(),
-      name,
-      plan: "free",
-      creditsRemaining: 0,
-      transcriptions: [],
-      apiKeys: [],
-    };
+/** Upsert user on OAuth sign-in (also used for credentials sign-up). */
+export async function upsertUser(email: string, provider: "credentials" | "google" | "github"): Promise<void> {
+  const { baseUrl, apiKey } = requireConfig();
+  if (!TEABLE_USERS_TABLE_ID) throw new Error("TEABLE_USERS_TABLE_ID not set");
+
+  const normalizedEmail = email.toLowerCase().trim();
+  const existing = await findRecordByEmail(TEABLE_USERS_TABLE_ID, normalizedEmail);
+
+  if (existing) {
+    await updateRecord(TEABLE_USERS_TABLE_ID, existing.id, { provider });
   } else {
-    all[key].name = name;
+    await createRecord(TEABLE_USERS_TABLE_ID, {
+      email: normalizedEmail,
+      plan: "free",
+      creditsRemaining: 0,
+      provider,
+    });
   }
-  writeAllData(all);
-  return all[key];
 }
 
-export function addTranscription(
+export async function setPassword(email: string, passwordHash: string): Promise<void> {
+  if (!TEABLE_USERS_TABLE_ID) throw new Error("TEABLE_USERS_TABLE_ID not set");
+  const record = await findRecordByEmail(TEABLE_USERS_TABLE_ID, email);
+  if (!record) throw new Error("User not found");
+  await updateRecord(TEABLE_USERS_TABLE_ID, record.id, { passwordHash });
+}
+
+export async function getPasswordHash(email: string): Promise<string | undefined> {
+  if (!TEABLE_USERS_TABLE_ID) return undefined;
+  const record = await findRecordByEmail(TEABLE_USERS_TABLE_ID, email);
+  return (record?.fields?.passwordHash as string) ?? undefined;
+}
+
+export async function setUserPlan(
+  email: string,
+  plan: "free" | "credits" | "pro",
+  creditsRemaining?: number
+): Promise<UserData> {
+  if (!TEABLE_USERS_TABLE_ID) throw new Error("TEABLE_USERS_TABLE_ID not set");
+  const record = await findRecordByEmail(TEABLE_USERS_TABLE_ID, email);
+  if (!record) throw new Error("User not found");
+
+  const fields: Record<string, unknown> = { plan };
+  if (creditsRemaining !== undefined) fields.creditsRemaining = creditsRemaining;
+  await updateRecord(TEABLE_USERS_TABLE_ID, record.id, fields);
+
+  return {
+    email: email.toLowerCase(),
+    plan,
+    creditsRemaining: creditsRemaining ?? (record.fields.creditsRemaining as number) ?? 0,
+    provider: (record.fields.provider as "" | "credentials" | "google" | "github") ?? "",
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* Public API — Transcripts                                           */
+/* ------------------------------------------------------------------ */
+
+export async function addTranscription(
   email: string,
   record: TranscriptionRecord
-): UserData {
-  const all = readAllData();
-  const key = getUserKey(email);
-  if (!all[key]) {
-    all[key] = {
-      email: email.toLowerCase(),
-      name: "",
-      plan: "free",
-      creditsRemaining: 0,
-      transcriptions: [],
-      apiKeys: [],
-    };
-  }
-  all[key].transcriptions.unshift(record);
-  writeAllData(all);
-  return all[key];
+): Promise<void> {
+  if (!TEABLE_TRANSCRIPTS_TABLE_ID) return;
+
+  const { baseUrl, apiKey } = requireConfig();
+
+  // Extract episode ID from the spotify URL
+  const episodeIdMatch = record.id || record.spotifyUrl.match(/\/episode\/([a-zA-Z0-9]{22})/);
+  const episodeId = typeof episodeIdMatch === "string" ? episodeIdMatch : episodeIdMatch?.[1] ?? "";
+
+  await fetch(`${baseUrl}/api/table/${TEABLE_TRANSCRIPTS_TABLE_ID}/record`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({
+      records: [{
+        fields: {
+          email: email.toLowerCase().trim(),
+          spotify_episode_id: episodeId,
+          execution_time: record.executionTime,
+          episodeTitle: record.episodeTitle,
+          segments: "[]",
+        },
+      }],
+      fieldKeyType: "name",
+      typecast: true,
+    }),
+    signal: AbortSignal.timeout(8_000),
+  });
 }
 
-export function getMonthlyUsage(email: string): number {
-  const user = getUserData(email);
+export async function getMonthlyUsage(email: string): Promise<number> {
+  if (!TEABLE_TRANSCRIPTS_TABLE_ID) return 0;
+  const records = await getTranscriptRecords(email);
+  if (!records.length) return 0;
+
   const now = new Date();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-  return user.transcriptions.filter((t) => t.timestamp >= monthStart).length;
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+
+  return records.filter((r) => new Date(r.timestamp).getTime() >= monthStart).length;
 }
 
-export function getUsageStats(email: string): {
+export async function getUsageStats(email: string): Promise<{
   usedThisMonth: number;
   total: number;
   planLimit: number;
   remaining: number;
-} {
-  const user = getUserData(email);
-  const usedThisMonth = getMonthlyUsage(email);
+}> {
+  const user = await getUserData(email);
+  const records = await getTranscriptRecords(email);
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  const usedThisMonth = records.filter((r) => new Date(r.timestamp).getTime() >= monthStart).length;
+  const total = records.length;
   const planLimit =
     user.plan === "free" ? FREE_PODS_PER_MONTH : user.plan === "pro" ? 999 : Infinity;
+
   return {
     usedThisMonth,
-    total: user.transcriptions.length,
+    total,
     planLimit,
     remaining: Math.max(0, planLimit - usedThisMonth),
   };
 }
 
-export function getTranscriptionHistory(email: string): TranscriptionRecord[] {
-  return getUserData(email).transcriptions;
+export async function getTranscriptionHistory(email: string): Promise<TranscriptionRecord[]> {
+  return getTranscriptRecords(email);
 }
 
-/* ------------------------------------------------------------------ */
-/* API key management                                                 */
-/* ------------------------------------------------------------------ */
+async function getTranscriptRecords(email: string): Promise<TranscriptionRecord[]> {
+  const { baseUrl, apiKey } = requireConfig();
+  if (!TEABLE_TRANSCRIPTS_TABLE_ID) return [];
 
-function generateApiKey(): string {
-  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
-  const random = (len: number) =>
-    Array.from({ length }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
-  return `tk_${random(32)}`;
-}
+  const normalizedEmail = email.toLowerCase().trim();
 
-export function createApiKey(email: string, label: string): ApiKey {
-  const all = readAllData();
-  const key = getUserKey(email);
-  if (!all[key]) throw new Error("User not found");
-  const apiKey: ApiKey = {
-    key: generateApiKey(),
-    label,
-    created: new Date().toISOString(),
-    lastUsed: null,
-  };
-  all[key].apiKeys.push(apiKey);
-  writeAllData(all);
-  return apiKey;
-}
+  const filter = JSON.stringify({
+    conjunction: "and",
+    filterSet: [{ fieldId: "email", operator: "is", value: normalizedEmail }],
+  });
 
-export function deleteApiKey(email: string, key: string): void {
-  const all = readAllData();
-  const k = getUserKey(email);
-  if (!all[k]) return;
-  all[k].apiKeys = all[k].apiKeys.filter((ak) => ak.key !== key);
-  writeAllData(all);
-}
+  const url = `${baseUrl}/api/table/${TEABLE_TRANSCRIPTS_TABLE_ID}/record?filter=${encodeURIComponent(filter)}&fieldKeyType=name`;
 
-export function getApiKeys(email: string): ApiKey[] {
-  return getUserData(email).apiKeys;
-}
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" },
+    signal: AbortSignal.timeout(8_000),
+  });
 
-export function setUserPlan(
-  email: string,
-  plan: "free" | "credits" | "pro",
-  creditsRemaining?: number
-): UserData {
-  const all = readAllData();
-  const key = getUserKey(email);
-  if (!all[key]) throw new Error("User not found");
-  all[key].plan = plan;
-  if (creditsRemaining !== undefined) {
-    all[key].creditsRemaining = creditsRemaining;
-  }
-  writeAllData(all);
-  return all[key];
+  if (!res.ok) return [];
+  const data: any = await res.json();
+  if (!data?.records) return [];
+
+  return data.records.map((r: any) => ({
+    id: r.fields.spotify_episode_id ?? "",
+    episodeTitle: r.fields.episodeTitle ?? "",
+    spotifyUrl: `https://open.spotify.com/episode/${r.fields.spotify_episode_id}`,
+    timestamp: r.createdTime ?? new Date().toISOString(),
+    executionTime: r.fields.execution_time ?? 0,
+  }));
 }

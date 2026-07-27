@@ -11,12 +11,7 @@ import {
   BarChart3,
   History,
   CreditCard,
-  Key,
   ExternalLink,
-  Copy,
-  Check,
-  Trash2,
-  Plus,
   Clock,
   Zap,
   FileText,
@@ -42,11 +37,9 @@ const transcriptSans = Inter({
 interface TranscriptionRecord {
   id: string;
   episodeTitle: string;
-  showName: string;
   spotifyUrl: string;
   timestamp: string;
   executionTime: number;
-  adFiltered: boolean;
 }
 
 interface UsageStats {
@@ -57,12 +50,6 @@ interface UsageStats {
   plan: string;
 }
 
-interface ApiKey {
-  key: string;
-  label: string;
-  created: string;
-  lastUsed: string | null;
-}
 
 /* ------------------------------------------------------------------ */
 /* Helpers                                                            */
@@ -78,31 +65,15 @@ function formatDate(iso: string): string {
   });
 }
 
-function timeAgo(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
-}
-
-function maskKey(key: string): string {
-  if (key.length <= 8) return key;
-  return key.slice(0, 8) + "..." + key.slice(-4);
-}
-
 /* ------------------------------------------------------------------ */
 /* Tabs                                                               */
 /* ------------------------------------------------------------------ */
 
-type Tab = "workspace" | "billing" | "api";
+type Tab = "workspace" | "billing";
 
 const TABS: { id: Tab; label: string; icon: React.FC<{ className?: string }> }[] = [
   { id: "workspace", label: "Workspace", icon: BarChart3 },
   { id: "billing", label: "Billing", icon: CreditCard },
-  { id: "api", label: "API Keys", icon: Key },
 ];
 
 /* ------------------------------------------------------------------ */
@@ -154,7 +125,7 @@ function DashboardShell({ session }: { session: any }) {
             Dashboard
           </h1>
           <p className="font-sans text-base text-gray-500 mt-2">
-            Welcome back, {session.user.name}
+            Welcome back, {session.user.email?.split("@")[0]}
           </p>
         </div>
 
@@ -184,8 +155,7 @@ function DashboardShell({ session }: { session: any }) {
         {/* Tab content */}
         {activeTab === "workspace" && <WorkspaceTab email={session.user.email!} />}
         {activeTab === "billing" && <BillingTab email={session.user.email!} />}
-        {activeTab === "api" && <ApiTab email={session.user.email!} />}
-      </main>
+              </main>
 
       <footer className="border-t border-gray-100 bg-white px-8 py-5 text-center font-sans text-[11px] font-medium text-gray-400">
         Not affiliated with Spotify Corporation · Made by Alex Gurinovich
@@ -206,7 +176,6 @@ interface TranscriptSegment {
 
 interface Metadata {
   episodeTitle: string;
-  showName: string;
 }
 
 interface TranscriptionResult {
@@ -214,7 +183,6 @@ interface TranscriptionResult {
   rssFeedUrl: string | null;
   transcript: string;
   segments: TranscriptSegment[];
-  adFiltered: boolean;
   executionTime?: number;
 }
 
@@ -464,8 +432,7 @@ function WorkspaceTab({ email: _email }: { email: string }) {
                   <p className="font-sans text-sm font-bold text-black truncate">{result.metadata.episodeTitle}</p>
                   <p className="font-sans text-xs text-gray-400">
                     {result.executionTime?.toFixed(1)}s
-                    {result.adFiltered && " · Ad-filtered"}
-                  </p>
+                                      </p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <button
@@ -583,19 +550,13 @@ function WorkspaceTab({ email: _email }: { email: string }) {
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0 flex-1">
                     <h3 className="font-sans font-bold text-black truncate">{item.episodeTitle}</h3>
-                    {item.showName && (
-                      <p className="font-sans text-sm text-gray-400 mt-0.5">{item.showName}</p>
-                    )}
                     <div className="flex items-center gap-3 mt-2">
                       <span className="font-sans text-xs text-gray-400 flex items-center gap-1">
                         <Clock className="h-3 w-3" />
                         {formatDate(item.timestamp)}
                       </span>
                       <span className="font-sans text-xs text-gray-400">{item.executionTime.toFixed(1)}s</span>
-                      {item.adFiltered && (
-                        <span className="font-sans text-[11px] text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">Ad-filtered</span>
-                      )}
-                    </div>
+                                          </div>
                   </div>
                   <a
                     href={item.spotifyUrl}
@@ -683,188 +644,3 @@ function BillingTab({ email: _email }: { email: string }) {
   );
 }
 
-/* ------------------------------------------------------------------ */
-/* API Keys Tab                                                       */
-/* ------------------------------------------------------------------ */
-
-function ApiTab({ email: _email }: { email: string }) {
-  const [keys, setKeys] = useState<ApiKey[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [newLabel, setNewLabel] = useState("");
-  const [showNew, setShowNew] = useState(false);
-  const [copiedKey, setCopiedKey] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
-
-  const loadKeys = useCallback(() => {
-    fetch("/api/dashboard/api-key")
-      .then((r) => r.json())
-      .then((data) => {
-        setKeys(data.keys || []);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  }, []);
-
-  useEffect(() => {
-    loadKeys();
-  }, [loadKeys]);
-
-  const handleCreate = async () => {
-    if (!newLabel.trim()) return;
-    setCreating(true);
-    try {
-      const res = await fetch("/api/dashboard/api-key", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ label: newLabel.trim() }),
-      });
-      const data = await res.json();
-      if (data.key) {
-        setKeys((prev) => [...prev, data.key]);
-        setCopiedKey(data.key.key);
-        setTimeout(() => setCopiedKey(null), 3000);
-      }
-    } catch {}
-    setCreating(false);
-    setNewLabel("");
-    setShowNew(false);
-  };
-
-  const handleDelete = async (key: string) => {
-    await fetch("/api/dashboard/api-key", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ key }),
-    });
-    setKeys((prev) => prev.filter((k) => k.key !== key));
-  };
-
-  const handleCopy = (key: string) => {
-    navigator.clipboard.writeText(key);
-    setCopiedKey(key);
-    setTimeout(() => setCopiedKey(null), 2000);
-  };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <div className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-gray-300 border-t-black" />
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-6">
-      <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-[0_4px_24px_rgba(0,0,0,0.01)]">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
-            <div className="rounded-xl bg-black/5 p-2.5">
-              <Key className="h-5 w-5 text-black" />
-            </div>
-            <div>
-              <h2 className="font-sans text-lg font-bold text-black">API Keys</h2>
-              <p className="font-sans text-xs text-gray-400">Manage your API access tokens</p>
-            </div>
-          </div>
-          <button
-            onClick={() => setShowNew(!showNew)}
-            className="font-sans flex items-center gap-1.5 rounded-xl bg-black px-4 py-2 text-sm font-medium text-white hover:bg-gray-900 transition-all"
-          >
-            <Plus className="h-4 w-4" />
-            New Key
-          </button>
-        </div>
-
-        {showNew && (
-          <div className="mb-6 p-4 rounded-xl bg-gray-50 border border-gray-100">
-            <p className="font-sans text-sm font-medium text-black mb-3">Create a new API key</p>
-            <div className="flex gap-3">
-              <input
-                type="text"
-                value={newLabel}
-                onChange={(e) => setNewLabel(e.target.value)}
-                placeholder="Label (e.g. My App)"
-                className="font-sans flex-1 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm text-[#111111] placeholder-gray-400 focus:border-black focus:outline-none focus:ring-1 focus:ring-black/10"
-                onKeyDown={(e) => e.key === "Enter" && handleCreate()}
-              />
-              <button
-                onClick={handleCreate}
-                disabled={creating || !newLabel.trim()}
-                className="font-sans rounded-xl bg-black px-5 py-2.5 text-sm font-medium text-white hover:bg-gray-900 transition-all disabled:opacity-30"
-              >
-                {creating ? "Creating..." : "Create"}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {keys.length === 0 ? (
-          <div className="p-8 text-center">
-            <Key className="h-8 w-8 text-gray-200 mx-auto mb-3" />
-            <p className="font-sans text-sm text-gray-500">No API keys yet. Create one to get started.</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {keys.map((apiKey) => (
-              <div
-                key={apiKey.key}
-                className="flex items-center justify-between p-4 rounded-xl border border-gray-100 hover:border-gray-200 transition-all"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="font-sans text-sm font-medium text-black">{apiKey.label}</p>
-                  <div className="flex items-center gap-3 mt-1">
-                    <code className="font-mono text-xs text-gray-400 bg-gray-50 px-2 py-0.5 rounded">
-                      {maskKey(apiKey.key)}
-                    </code>
-                    <span className="font-sans text-xs text-gray-400">
-                      Created {timeAgo(apiKey.created)}
-                    </span>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <button
-                    onClick={() => handleCopy(apiKey.key)}
-                    className="rounded-xl border border-gray-200 p-2 text-gray-400 hover:border-black hover:text-black transition-all"
-                    title="Copy key"
-                  >
-                    {copiedKey === apiKey.key ? (
-                      <Check className="h-4 w-4 text-green-500" />
-                    ) : (
-                      <Copy className="h-4 w-4" />
-                    )}
-                  </button>
-                  <button
-                    onClick={() => handleDelete(apiKey.key)}
-                    className="rounded-xl border border-gray-200 p-2 text-gray-400 hover:border-red-300 hover:text-red-500 transition-all"
-                    title="Delete key"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Usage info */}
-      <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-[0_4px_24px_rgba(0,0,0,0.01)]">
-        <h3 className="font-sans font-bold text-black mb-2">Using the API</h3>
-        <p className="font-sans text-sm text-gray-500 leading-relaxed">
-          Use your API key to authenticate requests to the Tranzkript API. Include it in the
-          <code className="font-mono text-xs bg-gray-100 px-1.5 py-0.5 rounded mx-1">Authorization</code>
-          header as <code className="font-mono text-xs bg-gray-100 px-1.5 py-0.5 rounded mx-1">Bearer tk_...</code>.
-        </p>
-        <div className="mt-4 p-4 rounded-xl bg-gray-50 border border-gray-100">
-          <p className="font-sans text-xs font-medium text-gray-400 mb-2">Quick example:</p>
-          <code className="font-mono text-xs text-gray-600 block leading-relaxed">
-            curl -X POST https://tranzkript.app/api/transcribe \<br />
-            &nbsp;&nbsp;-H "Authorization: Bearer tk_your_key_here" \<br />
-            &nbsp;&nbsp;-H "Content-Type: application/json" \<br />
-            &nbsp;&nbsp;-d '{'"url": "https://open.spotify.com/episode/..."'}'
-          </code>
-        </div>
-      </div>
-    </div>
-  );
-}

@@ -5,7 +5,7 @@
 @tailwind utilities;
 
 @layer base {
-  body, html, button, input, label, select, textarea {
+  body, html, input, label, select, textarea {
     font-family: var(--font-barlow-condensed), sans-serif !important;
   }
   body {

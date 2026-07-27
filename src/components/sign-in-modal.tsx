@@ -2,15 +2,22 @@
 
 import { X } from "lucide-react";
 import { signIn } from "next-auth/react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState, FormEvent } from "react";
 
 interface SignInModalProps {
   open: boolean;
   onClose: () => void;
 }
 
+type Mode = "signin" | "signup";
+
 export default function SignInModal({ open, onClose }: SignInModalProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
+  const [mode, setMode] = useState<Mode>("signin");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -21,7 +28,67 @@ export default function SignInModal({ open, onClose }: SignInModalProps) {
     return () => document.removeEventListener("keydown", handler);
   }, [open, onClose]);
 
+  /* Reset form when modal opens/closes or mode toggles */
+  useEffect(() => {
+    setEmail("");
+    setPassword("");
+    setError("");
+    setLoading(false);
+  }, [open, mode]);
+
   if (!open) return null;
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError("");
+
+    if (!email.trim() || !password.trim()) {
+      setError("Email and password are required.");
+      return;
+    }
+
+    if (password.length < 6) {
+      setError("Password must be at least 6 characters.");
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      if (mode === "signup") {
+        const res = await fetch("/api/auth/signup", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: email.trim(), password }),
+        });
+
+        if (!res.ok) {
+          const data = await res.json();
+          setError(data.error || "Sign up failed.");
+          setLoading(false);
+          return;
+        }
+      }
+
+      /* Sign in with credentials (both modes end here) */
+      const result = await signIn("credentials", {
+        email: email.trim(),
+        password,
+        redirect: false,
+      });
+
+      if (result?.error) {
+        setError("Invalid email or password.");
+        setLoading(false);
+        return;
+      }
+
+      window.location.href = "/dashboard";
+    } catch {
+      setError("Something went wrong. Please try again.");
+      setLoading(false);
+    }
+  }
 
   return (
     <div
@@ -32,7 +99,7 @@ export default function SignInModal({ open, onClose }: SignInModalProps) {
       <div className="mx-4 w-full max-w-sm rounded-2xl border border-gray-200 bg-white p-8 shadow-2xl">
         <div className="flex items-center justify-between mb-6">
           <h2 className="font-sans text-xl font-bold text-black">
-            Sign in to Tranzkript
+            {mode === "signin" ? "Sign in to Tranzkript" : "Create an account"}
           </h2>
           <button
             onClick={onClose}
@@ -42,10 +109,53 @@ export default function SignInModal({ open, onClose }: SignInModalProps) {
           </button>
         </div>
 
-        <p className="font-sans text-sm text-gray-500 mb-6 leading-relaxed">
-          Sign in to unlock unlimited transcriptions, track your history, and manage your account.
-        </p>
+        {/* Email / Password form */}
+        <form onSubmit={handleSubmit} className="space-y-3 mb-4">
+          <input
+            type="email"
+            placeholder="Email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="font-sans w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 placeholder-gray-400 transition-all focus:border-black focus:outline-none focus:ring-1 focus:ring-black/10"
+          />
+          <input
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="font-sans w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 placeholder-gray-400 transition-all focus:border-black focus:outline-none focus:ring-1 focus:ring-black/10"
+          />
 
+          {error && (
+            <p className="font-sans text-xs text-red-500">{error}</p>
+          )}
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="font-sans flex w-full items-center justify-center rounded-xl bg-black px-4 py-3 text-sm font-medium text-white transition-all hover:bg-gray-900 disabled:opacity-50 cursor-pointer"
+          >
+            {loading ? (
+              <>
+                <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white/20 border-t-white mr-2" />
+                {mode === "signin" ? "Signing in..." : "Creating account..."}
+              </>
+            ) : mode === "signin" ? (
+              "Sign in with email"
+            ) : (
+              "Create account"
+            )}
+          </button>
+        </form>
+
+        {/* Divider */}
+        <div className="flex items-center gap-3 mb-4">
+          <div className="flex-1 border-t border-gray-100" />
+          <span className="font-sans text-xs text-gray-400">or continue with</span>
+          <div className="flex-1 border-t border-gray-100" />
+        </div>
+
+        {/* OAuth buttons */}
         <div className="space-y-3">
           <button
             onClick={() => signIn("google", { callbackUrl: "/dashboard" })}
@@ -71,7 +181,32 @@ export default function SignInModal({ open, onClose }: SignInModalProps) {
           </button>
         </div>
 
-        <p className="font-sans text-xs text-gray-400 text-center mt-6 leading-relaxed">
+        {/* Mode toggle */}
+        <p className="font-sans text-xs text-gray-400 text-center mt-6">
+          {mode === "signin" ? (
+            <>
+              Don&apos;t have an account?{" "}
+              <button
+                onClick={() => setMode("signup")}
+                className="text-black underline hover:no-underline cursor-pointer"
+              >
+                Sign up
+              </button>
+            </>
+          ) : (
+            <>
+              Already have an account?{" "}
+              <button
+                onClick={() => setMode("signin")}
+                className="text-black underline hover:no-underline cursor-pointer"
+              >
+                Sign in
+              </button>
+            </>
+          )}
+        </p>
+
+        <p className="font-sans text-xs text-gray-400 text-center mt-4 leading-relaxed">
           By signing in, you agree to our Terms of Service and Privacy Policy.
         </p>
       </div>
