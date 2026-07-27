@@ -69,11 +69,11 @@ function formatDate(iso: string): string {
 /* Tabs                                                               */
 /* ------------------------------------------------------------------ */
 
-type Tab = "workspace" | "billing";
+type Tab = "workspace" | "settings";
 
 const TABS: { id: Tab; label: string; icon: React.FC<{ className?: string }> }[] = [
   { id: "workspace", label: "Workspace", icon: BarChart3 },
-  { id: "billing", label: "Billing", icon: CreditCard },
+  { id: "settings", label: "Settings", icon: CreditCard },
 ];
 
 /* ------------------------------------------------------------------ */
@@ -154,7 +154,7 @@ function DashboardShell({ session }: { session: any }) {
 
         {/* Tab content */}
         {activeTab === "workspace" && <WorkspaceTab email={session.user.email!} />}
-        {activeTab === "billing" && <BillingTab email={session.user.email!} />}
+        {activeTab === "settings" && <SettingsTab email={session.user.email!} />}
               </main>
 
       <footer className="border-t border-gray-100 bg-white px-8 py-5 text-center font-sans text-[11px] font-medium text-gray-400">
@@ -577,10 +577,10 @@ function WorkspaceTab({ email: _email }: { email: string }) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Billing Tab                                                        */
+/* Settings Tab                                                       */
 /* ------------------------------------------------------------------ */
 
-function BillingTab({ email }: { email: string }) {
+function SettingsTab({ email }: { email: string }) {
   const [stats, setStats] = useState<UsageStats | null>(null);
   const [cpCurrent, setCpCurrent] = useState("");
   const [cpNew, setCpNew] = useState("");
