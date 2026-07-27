@@ -118,7 +118,7 @@ export default function TermsPage() {
           <section>
             <h2 className="font-bold text-black text-lg mb-2">9. Contact</h2>
             <p>
-              For questions about these Terms, please contact us at alexgurinovich@gmail.com.
+              For questions about these Terms, please contact us at [EMAIL].
             </p>
           </section>
         </div>

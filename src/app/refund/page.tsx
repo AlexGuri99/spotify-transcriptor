@@ -71,14 +71,14 @@ export default function RefundPage() {
           <section>
             <h2 className="font-bold text-black text-lg mb-2">3. Service Issues</h2>
             <p>
-              If you experience a technical issue that prevents you from using the Service (e.g., a transcription fails and credits are deducted without receiving a result), please contact us at alexgurinovich@gmail.com within 7 days of the incident. We will review the issue and may, at our discretion, restore the credits or issue a refund.
+              If you experience a technical issue that prevents you from using the Service (e.g., a transcription fails and credits are deducted without receiving a result), please contact us at [EMAIL] within 7 days of the incident. We will review the issue and may, at our discretion, restore the credits or issue a refund.
             </p>
           </section>
 
           <section>
             <h2 className="font-bold text-black text-lg mb-2">4. Refund Requests</h2>
             <p>
-              To request a refund, contact us at alexgurinovich@gmail.com with your account email and a description of the issue. We aim to respond within 5 business days.
+              To request a refund, contact us at [EMAIL] with your account email and a description of the issue. We aim to respond within 5 business days.
             </p>
           </section>
 

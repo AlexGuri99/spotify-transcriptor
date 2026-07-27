@@ -56,14 +56,7 @@ export default function PrivacyPage() {
         <div className="font-[family-name:var(--font-barlow-condensed)] text-sm text-gray-600 space-y-6 leading-relaxed">
           <section>
             <h2 className="font-bold text-black text-lg mb-2">1. Information We Collect</h2>
-            <p>
-              We collect the following information when you use Tranzkript:
-            </p>
-            <ul className="list-disc pl-6 mt-2 space-y-1">
-              <li><strong>Account information:</strong> Email address and password (if you sign up with email/password) or OAuth provider ID (if you sign in with Google or GitHub).</li>
-              <li><strong>Usage data:</strong> Podcast episode URLs you submit for transcription, transcription history, and usage statistics.</li>
-              <li><strong>Technical data:</strong> IP address, browser type, and basic analytics to operate and improve the Service.</li>
-            </ul>
+            <p className="text-gray-400 italic">Coming soon.</p>
           </section>
 
           <section>
@@ -102,7 +95,7 @@ export default function PrivacyPage() {
           <section>
             <h2 className="font-bold text-black text-lg mb-2">6. Your Rights</h2>
             <p>
-              Depending on your jurisdiction, you may have the right to access, correct, delete, or export your personal data. To exercise these rights, contact us at alexgurinovich@gmail.com.
+              Depending on your jurisdiction, you may have the right to access, correct, delete, or export your personal data. To exercise these rights, contact us at [EMAIL].
             </p>
           </section>
 
@@ -123,7 +116,7 @@ export default function PrivacyPage() {
           <section>
             <h2 className="font-bold text-black text-lg mb-2">9. Contact</h2>
             <p>
-              For privacy-related inquiries, contact us at alexgurinovich@gmail.com.
+              For privacy-related inquiries, contact us at [EMAIL].
             </p>
           </section>
         </div>
