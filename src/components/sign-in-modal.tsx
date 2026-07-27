@@ -16,6 +16,7 @@ export default function SignInModal({ open, onClose }: SignInModalProps) {
   const [mode, setMode] = useState<Mode>("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -32,6 +33,7 @@ export default function SignInModal({ open, onClose }: SignInModalProps) {
   useEffect(() => {
     setEmail("");
     setPassword("");
+    setConfirmPassword("");
     setError("");
     setLoading(false);
   }, [open, mode]);
@@ -49,6 +51,11 @@ export default function SignInModal({ open, onClose }: SignInModalProps) {
 
     if (password.length < 6) {
       setError("Password must be at least 6 characters.");
+      return;
+    }
+
+    if (mode === "signup" && password !== confirmPassword) {
+      setError("Passwords do not match.");
       return;
     }
 
@@ -125,6 +132,16 @@ export default function SignInModal({ open, onClose }: SignInModalProps) {
             onChange={(e) => setPassword(e.target.value)}
             className="font-sans w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 placeholder-gray-400 transition-all focus:border-black focus:outline-none focus:ring-1 focus:ring-black/10"
           />
+
+          {mode === "signup" && (
+            <input
+              type="password"
+              placeholder="Repeat password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              className="font-sans w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 placeholder-gray-400 transition-all focus:border-black focus:outline-none focus:ring-1 focus:ring-black/10"
+            />
+          )}
 
           {error && (
             <p className="font-sans text-xs text-red-500">{error}</p>

@@ -580,8 +580,14 @@ function WorkspaceTab({ email: _email }: { email: string }) {
 /* Billing Tab                                                        */
 /* ------------------------------------------------------------------ */
 
-function BillingTab({ email: _email }: { email: string }) {
+function BillingTab({ email }: { email: string }) {
   const [stats, setStats] = useState<UsageStats | null>(null);
+  const [cpCurrent, setCpCurrent] = useState("");
+  const [cpNew, setCpNew] = useState("");
+  const [cpConfirm, setCpConfirm] = useState("");
+  const [cpError, setCpError] = useState("");
+  const [cpSuccess, setCpSuccess] = useState("");
+  const [cpLoading, setCpLoading] = useState(false);
 
   useEffect(() => {
     fetch("/api/dashboard/stats")
@@ -592,6 +598,46 @@ function BillingTab({ email: _email }: { email: string }) {
 
   const planName = stats?.plan === "free" ? "Free" : stats?.plan === "pro" ? "Pro" : "Credits";
   const planPrice = stats?.plan === "free" ? "$0" : stats?.plan === "pro" ? "From $2.25/mo" : "$0.20/pod";
+
+  async function handleChangePassword(e: FormEvent) {
+    e.preventDefault();
+    setCpError("");
+    setCpSuccess("");
+
+    if (!cpCurrent || !cpNew) {
+      setCpError("All fields are required.");
+      return;
+    }
+    if (cpNew.length < 6) {
+      setCpError("New password must be at least 6 characters.");
+      return;
+    }
+    if (cpNew !== cpConfirm) {
+      setCpError("New passwords do not match.");
+      return;
+    }
+
+    setCpLoading(true);
+    try {
+      const res = await fetch("/api/auth/change-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ currentPassword: cpCurrent, newPassword: cpNew }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setCpError(data.error || "Failed to change password.");
+      } else {
+        setCpSuccess("Password changed successfully.");
+        setCpCurrent("");
+        setCpNew("");
+        setCpConfirm("");
+      }
+    } catch {
+      setCpError("Something went wrong.");
+    }
+    setCpLoading(false);
+  }
 
   return (
     <div className="space-y-6">
@@ -629,6 +675,47 @@ function BillingTab({ email: _email }: { email: string }) {
             </p>
           </div>
         )}
+      </div>
+
+      {/* Change password */}
+      <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-[0_4px_24px_rgba(0,0,0,0.01)]">
+        <h3 className="font-sans font-bold text-black mb-1">Change Password</h3>
+        <p className="font-sans text-xs text-gray-400 mb-5">Update your account password</p>
+
+        <form onSubmit={handleChangePassword} className="space-y-3 max-w-sm">
+          <input
+            type="password"
+            placeholder="Current password"
+            value={cpCurrent}
+            onChange={(e) => setCpCurrent(e.target.value)}
+            className="font-sans w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 placeholder-gray-400 transition-all focus:border-black focus:outline-none focus:ring-1 focus:ring-black/10"
+          />
+          <input
+            type="password"
+            placeholder="New password"
+            value={cpNew}
+            onChange={(e) => setCpNew(e.target.value)}
+            className="font-sans w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 placeholder-gray-400 transition-all focus:border-black focus:outline-none focus:ring-1 focus:ring-black/10"
+          />
+          <input
+            type="password"
+            placeholder="Repeat new password"
+            value={cpConfirm}
+            onChange={(e) => setCpConfirm(e.target.value)}
+            className="font-sans w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 placeholder-gray-400 transition-all focus:border-black focus:outline-none focus:ring-1 focus:ring-black/10"
+          />
+
+          {cpError && <p className="font-sans text-xs text-red-500">{cpError}</p>}
+          {cpSuccess && <p className="font-sans text-xs text-green-600">{cpSuccess}</p>}
+
+          <button
+            type="submit"
+            disabled={cpLoading}
+            className="font-sans rounded-xl bg-black px-5 py-2.5 text-sm font-medium text-white hover:bg-gray-900 transition-all disabled:opacity-50 cursor-pointer"
+          >
+            {cpLoading ? "Updating..." : "Update Password"}
+          </button>
+        </form>
       </div>
 
       {/* Payment methods - placeholder */}
