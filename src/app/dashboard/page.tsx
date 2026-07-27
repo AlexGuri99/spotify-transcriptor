@@ -5,6 +5,7 @@ import { useSession, signOut } from "next-auth/react";
 import { redirect } from "next/navigation";
 import { Newsreader, Inter } from "next/font/google";
 import Link from "next/link";
+import SiteFooter from "@/components/site-footer";
 import {
   Videotape,
   LogOut,
@@ -157,9 +158,7 @@ function DashboardShell({ session }: { session: any }) {
         {activeTab === "settings" && <SettingsTab email={session.user.email!} />}
               </main>
 
-      <footer className="border-t border-gray-100 bg-white px-8 py-5 text-center font-sans text-[11px] font-medium text-gray-400">
-        Not affiliated with Spotify Corporation · Made by Alex Gurinovich
-      </footer>
+      <SiteFooter />
     </div>
   );
 }

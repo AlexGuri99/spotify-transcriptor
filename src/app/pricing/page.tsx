@@ -6,6 +6,7 @@ import { Videotape, Check, Sparkles, Zap, Sliders } from "lucide-react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import SignInModal from "@/components/sign-in-modal";
+import SiteFooter from "@/components/site-footer";
 
 const editorialSerif = Newsreader({
   subsets: ["latin"],
@@ -286,9 +287,7 @@ export default function PricingPage() {
         </div>
       </main>
 
-      <footer className="border-t border-gray-100 bg-white px-8 py-5 text-center font-sans text-[11px] font-medium text-gray-400">
-        Not affiliated with Spotify Corporation · Made by Alex Gurinovich
-      </footer>
+      <SiteFooter />
 
       <SignInModal open={showSignIn} onClose={() => setShowSignIn(false)} />
     </div>
