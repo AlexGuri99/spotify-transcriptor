@@ -106,8 +106,8 @@ export default function PricingPage() {
             </Link>
           </div>
 
-          {/* PayGo — Pay-As-You-Go */}
-          <div className="rounded-2xl border border-black bg-white p-8 shadow-[0_4px_24px_rgba(0,0,0,0.01)] flex flex-col ring-1 ring-black scale-[1.02] transition-all">
+          {/* PayGo — Pay-As-You-Go (Coming Soon) */}
+          <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-[0_4px_24px_rgba(0,0,0,0.01)] flex flex-col opacity-50 select-none">
             <div className="flex items-center gap-3 mb-4">
               <div className="rounded-xl bg-black/5 p-2.5">
                 <Zap className="h-5 w-5 text-black" />
@@ -127,17 +127,15 @@ export default function PricingPage() {
               For users who transcribe sporadically and don&apos;t want a monthly commitment.
             </p>
 
-            
-            <button
-              onClick={() => session?.user ? undefined : setShowSignIn(true)}
-              className="font-sans block w-full text-center rounded-xl bg-black px-6 py-3 text-sm font-medium text-white hover:bg-gray-900 transition-all shadow-sm"
-            >
-              Buy credits
-            </button>
+            <div className="mt-auto">
+              <span className="font-sans block w-full text-center rounded-xl bg-gray-200 px-6 py-3 text-sm font-medium text-gray-400">
+                Coming soon
+              </span>
+            </div>
           </div>
 
-          {/* Pro — Monthly Subscription with slider */}
-          <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-[0_4px_24px_rgba(0,0,0,0.01)] flex flex-col hover:border-gray-300 transition-all">
+          {/* Pro — Monthly Subscription with slider (Coming Soon) */}
+          <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-[0_4px_24px_rgba(0,0,0,0.01)] flex flex-col opacity-50 select-none">
             <div className="flex items-center gap-3 mb-4">
               <div className="rounded-xl bg-black/5 p-2.5">
                 <Sliders className="h-5 w-5 text-black" />
@@ -178,15 +176,15 @@ export default function PricingPage() {
 
             {/* Tier indicators */}
             <div className="grid grid-cols-3 gap-2 mb-6">
-              <div className={`rounded-lg border px-3 py-2 text-center ${proPods >= 16 && proPods <= 30 ? "border-black bg-black/5" : "border-gray-100"}`}>
+              <div className="rounded-lg border border-gray-100 px-3 py-2 text-center">
                 <p className="font-sans text-xs font-semibold text-black">16–30</p>
                 <p className="font-sans text-[11px] text-gray-500">$0.15/pod</p>
               </div>
-              <div className={`rounded-lg border px-3 py-2 text-center ${proPods >= 35 && proPods <= 70 ? "border-black bg-black/5" : "border-gray-100"}`}>
+              <div className="rounded-lg border border-gray-100 px-3 py-2 text-center">
                 <p className="font-sans text-xs font-semibold text-black">35–70</p>
                 <p className="font-sans text-[11px] text-gray-500">$0.12/pod</p>
               </div>
-              <div className={`rounded-lg border px-3 py-2 text-center ${proPods >= 75 ? "border-black bg-black/5" : "border-gray-100"}`}>
+              <div className="rounded-lg border border-gray-100 px-3 py-2 text-center">
                 <p className="font-sans text-xs font-semibold text-black">75–150+</p>
                 <p className="font-sans text-[11px] text-gray-500">$0.09/pod</p>
               </div>
@@ -196,13 +194,11 @@ export default function PricingPage() {
               For power users, researchers, and teams who transcribe at scale.
             </p>
 
-            
-            <button
-              onClick={() => session?.user ? undefined : setShowSignIn(true)}
-              className="font-sans block w-full text-center rounded-xl border border-gray-200 px-6 py-3 text-sm font-medium text-gray-700 hover:border-black hover:text-black transition-all"
-            >
-              Subscribe
-            </button>
+            <div className="mt-auto">
+              <span className="font-sans block w-full text-center rounded-xl bg-gray-200 px-6 py-3 text-sm font-medium text-gray-400">
+                Coming soon
+              </span>
+            </div>
           </div>
         </div>
 
@@ -210,7 +206,7 @@ export default function PricingPage() {
         <div className="max-w-2xl mx-auto mt-16 text-center">
           <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-[0_4px_24px_rgba(0,0,0,0.01)]">
             <p className="font-sans text-sm text-gray-500 leading-relaxed">
-              A &ldquo;pod&rdquo; is one episode transcription of any length. All plans include access to the same transcription engine. <span className="text-gray-300">Payments are not live yet — pricing is a forward look at what we plan to offer.</span>
+              A &ldquo;pod&rdquo; is one episode transcription of any length. All plans include access to the same transcription engine.
             </p>
           </div>
         </div>
