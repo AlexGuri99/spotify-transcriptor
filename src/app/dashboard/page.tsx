@@ -17,6 +17,8 @@ import {
   Zap,
   FileText,
   Sparkles,
+  Eye,
+  X,
 } from "lucide-react";
 
 const editorialSerif = Newsreader({
@@ -40,6 +42,12 @@ interface TranscriptionRecord {
   episodeTitle: string;
   spotifyUrl: string;
   timestamp: string;
+  executionTime: number;
+}
+
+interface CachedEpisodeData {
+  title: string;
+  segments: TranscriptSegment[];
   executionTime: number;
 }
 
@@ -215,6 +223,9 @@ function WorkspaceTab({ email: _email }: { email: string }) {
   const [stats, setStats] = useState<UsageStats | null>(null);
   const [history, setHistory] = useState<TranscriptionRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [viewingEpisode, setViewingEpisode] = useState<string | null>(null);
+  const [viewingTranscript, setViewingTranscript] = useState<CachedEpisodeData | null>(null);
+  const [viewingLoading, setViewingLoading] = useState(false);
 
   const transcriptRef = useRef<HTMLDivElement>(null);
   const pollingRef = useRef<number | null>(null);
@@ -239,6 +250,23 @@ function WorkspaceTab({ email: _email }: { email: string }) {
       }
     };
   }, []);
+
+  /* -------- Open transcript viewer -------- */
+  async function openTranscript(episodeId: string) {
+    setViewingEpisode(episodeId);
+    setViewingTranscript(null);
+    setViewingLoading(true);
+    try {
+      const res = await fetch(`/api/transcript/${episodeId}`);
+      if (!res.ok) throw new Error("Not found");
+      const data = await res.json();
+      setViewingTranscript(data);
+    } catch {
+      setViewingTranscript(null);
+    } finally {
+      setViewingLoading(false);
+    }
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -557,14 +585,24 @@ function WorkspaceTab({ email: _email }: { email: string }) {
                       <span className="font-sans text-xs text-gray-400">{item.executionTime.toFixed(1)}s</span>
                                           </div>
                   </div>
-                  <a
-                    href={item.spotifyUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="font-sans shrink-0 rounded-xl border border-gray-200 p-2.5 text-gray-400 hover:border-black hover:text-black transition-all"
-                  >
-                    <ExternalLink className="h-4 w-4" />
-                  </a>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => openTranscript(item.id)}
+                      className="font-sans shrink-0 rounded-xl border border-gray-200 p-2.5 text-gray-400 hover:border-black hover:text-black transition-all cursor-pointer"
+                      title="View transcript"
+                    >
+                      <FileText className="h-4 w-4" />
+                    </button>
+                    <a
+                      href={item.spotifyUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-sans shrink-0 rounded-xl border border-gray-200 p-2.5 text-gray-400 hover:border-black hover:text-black transition-all"
+                      title="Open in Spotify"
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                    </a>
+                  </div>
                 </div>
               </div>
             ))}
@@ -572,6 +610,55 @@ function WorkspaceTab({ email: _email }: { email: string }) {
         )}
       </div>
     </div>
+
+    {/* Transcript viewer modal */}
+    {viewingEpisode && (
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm p-4"
+        onClick={(e) => { if (e.target === e.currentTarget) setViewingEpisode(null); }}
+      >
+        <div className="mx-auto w-full max-w-2xl max-h-[85vh] rounded-2xl border border-gray-200 bg-white shadow-2xl flex flex-col">
+          {/* Header */}
+          <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4 shrink-0">
+            <h3 className="font-sans font-bold text-black truncate pr-4">
+              {viewingLoading ? "Loading..." : viewingTranscript?.title ?? "Transcript"}
+            </h3>
+            <button
+              onClick={() => setViewingEpisode(null)}
+              className="rounded-xl border border-gray-200 p-1.5 text-gray-400 hover:border-black hover:text-black transition-all shrink-0 cursor-pointer"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          {/* Body */}
+          <div className="overflow-y-auto px-6 py-5 flex-1">
+            {viewingLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="h-6 w-6 animate-spin rounded-full border-2 border-gray-200 border-t-black" />
+              </div>
+            ) : viewingTranscript ? (
+              <div className="space-y-3">
+                {viewingTranscript.segments.map((seg, i) => (
+                  <div key={segmentKey(seg, i)} className="flex gap-3">
+                    <span className="font-mono text-xs text-gray-400 mt-0.5 shrink-0 w-14 text-right tabular-nums">
+                      {formatTime(seg.start)}
+                    </span>
+                    <p className="font-sans text-sm text-gray-700 leading-relaxed">
+                      {seg.text}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="font-sans text-sm text-gray-500 text-center py-12">
+                Could not load transcript.
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    )}
   );
 }
 
