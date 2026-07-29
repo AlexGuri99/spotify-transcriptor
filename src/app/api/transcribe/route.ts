@@ -12,7 +12,7 @@ import * as os from "os";
 import { Readable } from "stream";
 import { finished } from "stream/promises";
 import { findCachedEpisode, saveEpisodeRecord } from "@/lib/teable";
-import { getUsageStats } from "@/lib/usage-tracker";
+import { getUsageStats, deductCredit, getUserData } from "@/lib/usage-tracker";
 
 /* ------------------------------------------------------------------ */
 /* Types                                                             */
@@ -682,7 +682,8 @@ export async function POST(req: NextRequest): Promise<Response> {
       { status: 401 }
     );
   }
-  const usage = await getUsageStats(session.user.email).catch(() => null);
+  const email = session.user.email;
+  const usage = await getUsageStats(email).catch(() => null);
   if (usage && usage.remaining <= 0) {
     return Response.json(
       {
@@ -692,6 +693,21 @@ export async function POST(req: NextRequest): Promise<Response> {
       },
       { status: 429 }
     );
+  }
+
+  /* Check credit balance for PayGo users */
+  if (usage) {
+    const userData = await getUserData(email);
+    if (userData.plan === "credits" && userData.creditsRemaining <= 0) {
+      return Response.json(
+        {
+          type: "plan_limit",
+          error: "You're out of credits.",
+          detail: "Purchase more credits to continue transcribing.",
+        },
+        { status: 429 }
+      );
+    }
   }
 
   if (isRateLimited(ip)) {
@@ -965,6 +981,11 @@ export async function POST(req: NextRequest): Promise<Response> {
         email: session?.user?.email ?? undefined,
         timestamp: new Date().toISOString(),
       });
+
+      // Deduct a credit for PayGo users
+      if (session?.user?.email) {
+        await deductCredit(session.user.email);
+      }
 
       await send({
         type: "result",

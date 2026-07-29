@@ -347,6 +347,7 @@ export async function getUsageStats(email: string): Promise<{
   total: number;
   planLimit: number;
   remaining: number;
+  creditsRemaining: number;
 }> {
   const user = await getUserData(email);
   const records = await getTranscriptRecords(email);
@@ -354,15 +355,42 @@ export async function getUsageStats(email: string): Promise<{
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
   const usedThisMonth = records.filter((r) => new Date(r.timestamp).getTime() >= monthStart).length;
   const total = records.length;
-  const planLimit =
-    user.plan === "free" ? FREE_PODS_PER_MONTH : user.plan === "pro" ? 999 : Infinity;
+
+  // Plan limits:
+  // - free: 5 per month
+  // - pro: creditsRemaining stores the pod count (e.g., 30 pods)
+  // - credits: no monthly limit, uses credits balance
+  let planLimit: number;
+  let remaining: number;
+
+  if (user.plan === "free") {
+    planLimit = FREE_PODS_PER_MONTH;
+    remaining = Math.max(0, planLimit - usedThisMonth);
+  } else if (user.plan === "pro") {
+    planLimit = user.creditsRemaining > 0 ? user.creditsRemaining : 999;
+    remaining = Math.max(0, planLimit - usedThisMonth);
+  } else {
+    // "credits" plan — no monthly limit, but uses credit balance
+    planLimit = Infinity;
+    remaining = Infinity;
+  }
 
   return {
     usedThisMonth,
     total,
     planLimit,
-    remaining: Math.max(0, planLimit - usedThisMonth),
+    remaining,
+    creditsRemaining: user.creditsRemaining,
   };
+}
+
+/** Deduct one credit from a PayGo user. Returns false if insufficient credits. */
+export async function deductCredit(email: string): Promise<boolean> {
+  const user = await getUserData(email);
+  if (user.plan !== "credits") return true; // Non-credits users don't need credit deduction
+  if (user.creditsRemaining <= 0) return false;
+  await setUserPlan(email, "credits", user.creditsRemaining - 1);
+  return true;
 }
 
 export async function getTranscriptionHistory(email: string): Promise<TranscriptionRecord[]> {

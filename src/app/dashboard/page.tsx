@@ -58,6 +58,7 @@ interface UsageStats {
   planLimit: number;
   remaining: number;
   plan: string;
+  creditsRemaining: number;
 }
 
 
@@ -754,8 +755,9 @@ function SettingsTab({ email }: { email: string }) {
       .catch(() => {});
   }, []);
 
-  const planName = stats?.plan === "free" ? "Free" : stats?.plan === "pro" ? "Pro" : "Credits";
-  const planPrice = stats?.plan === "free" ? "$0" : stats?.plan === "pro" ? "From $2.25/mo" : "$0.20/pod";
+  const planName = stats?.plan === "free" ? "Free" : stats?.plan === "pro" ? "Pro" : "PayGo";
+  const planPrice = stats?.plan === "free" ? "$0 / month" : stats?.plan === "pro" ? `$${((stats.planLimit ?? 30) * 0.17).toFixed(2)} / month` : "Prepaid credits";
+  const creditsInfo = stats?.plan === "credits" ? `${stats.creditsRemaining} credits remaining` : null;
 
   async function handleChangePassword(e: FormEvent) {
     e.preventDefault();
@@ -816,6 +818,9 @@ function SettingsTab({ email }: { email: string }) {
           <div>
             <p className="font-sans font-bold text-black">{planName}</p>
             <p className="font-sans text-sm text-gray-500 mt-0.5">{planPrice}</p>
+            {creditsInfo && (
+              <p className="font-sans text-xs text-gray-400 mt-1">{creditsInfo}</p>
+            )}
           </div>
           <Link
             href="/pricing"
@@ -836,13 +841,22 @@ function SettingsTab({ email }: { email: string }) {
         )}
       </div>
 
-      {/* Payment methods - placeholder */}
+      {/* Payment methods */}
       <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-[0_4px_24px_rgba(0,0,0,0.01)]">
-        <h3 className="font-sans font-bold text-black mb-4">Payment Methods</h3>
-        <div className="p-6 rounded-xl bg-gray-50 border border-gray-100 text-center">
-          <p className="font-sans text-sm text-gray-400">
-            Payments are not live yet. You can continue using the free tier while we set up billing.
+        <h3 className="font-sans font-bold text-black mb-4">Billing</h3>
+        <div className="p-6 rounded-xl bg-gray-50 border border-gray-100">
+          <p className="font-sans text-sm text-gray-600 leading-relaxed">
+            Payments are processed securely through Whop. To manage your subscription, purchase credits, or view your billing history, visit the Whop dashboard.
           </p>
+          <a
+            href="https://whop.com/dashboard"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-sans inline-flex items-center gap-2 mt-4 rounded-xl bg-black px-5 py-2.5 text-sm font-medium text-white hover:bg-gray-900 transition-all"
+          >
+            Manage Billing
+            <ExternalLink className="h-3.5 w-3.5" />
+          </a>
         </div>
       </div>
 
