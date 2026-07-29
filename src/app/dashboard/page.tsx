@@ -393,8 +393,9 @@ function WorkspaceTab({ email: _email }: { email: string }) {
   }
 
   return (
-    <div className="space-y-8">
-      {/* Top row: form left, pod usage right */}
+    <>
+      <div className="space-y-8">
+        {/* Top row: form left, pod usage right */}
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">
         {/* Transcription form */}
         <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-[0_4px_24px_rgba(0,0,0,0.01)]">
@@ -659,6 +660,7 @@ function WorkspaceTab({ email: _email }: { email: string }) {
         </div>
       </div>
     )}
+    </>
   );
 }
 
