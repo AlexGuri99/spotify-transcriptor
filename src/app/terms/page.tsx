@@ -118,7 +118,7 @@ export default function TermsPage() {
           <section>
             <h2 className="font-bold text-black text-lg mb-2">9. Contact</h2>
             <p>
-              For questions about these Terms, please contact us at [EMAIL].
+              For questions about these Terms, please contact us at support@tranzkript.com.
             </p>
           </section>
         </div>

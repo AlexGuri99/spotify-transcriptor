@@ -95,7 +95,7 @@ export default function PrivacyPage() {
           <section>
             <h2 className="font-bold text-black text-lg mb-2">6. Your Rights</h2>
             <p>
-              Depending on your jurisdiction, you may have the right to access, correct, delete, or export your personal data. To exercise these rights, contact us at [EMAIL].
+              Depending on your jurisdiction, you may have the right to access, correct, delete, or export your personal data. To exercise these rights, contact us at support@tranzkript.com.
             </p>
           </section>
 
@@ -116,7 +116,7 @@ export default function PrivacyPage() {
           <section>
             <h2 className="font-bold text-black text-lg mb-2">9. Contact</h2>
             <p>
-              For privacy-related inquiries, contact us at [EMAIL].
+              For privacy-related inquiries, contact us at support@tranzkript.com.
             </p>
           </section>
         </div>
