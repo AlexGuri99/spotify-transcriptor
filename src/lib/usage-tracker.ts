@@ -101,8 +101,9 @@ async function createRecord(tableId: string, fields: Record<string, unknown>): P
 async function deleteRecord(tableId: string, recordId: string): Promise<boolean> {
   const { baseUrl, apiKey } = requireConfig();
 
-  const url = `${baseUrl}/api/table/${tableId}/record?recordIds=${encodeURIComponent(recordId)}&fieldKeyType=name`;
+  const url = `${baseUrl}/api/table/${tableId}/record/${recordId}?fieldKeyType=name`;
 
+  console.log("[deleteRecord] URL:", url);
   const res = await fetch(url, {
     method: "DELETE",
     headers: {
@@ -112,6 +113,11 @@ async function deleteRecord(tableId: string, recordId: string): Promise<boolean>
     signal: AbortSignal.timeout(8_000),
   });
 
+  console.log("[deleteRecord] Status:", res.status);
+  if (!res.ok) {
+    const body = await res.text();
+    console.log("[deleteRecord] Error body:", body);
+  }
   return res.ok;
 }
 
@@ -270,10 +276,9 @@ async function deleteTranscriptsForUser(email: string): Promise<void> {
 
   const recordIds = data.records.map((r: any) => r.id);
 
-  // Delete in batches of 100 (Teable max per request)
-  for (let i = 0; i < recordIds.length; i += 100) {
-    const batch = recordIds.slice(i, i + 100);
-    const deleteUrl = `${baseUrl}/api/table/${TEABLE_TRANSCRIPTS_TABLE_ID}/record?recordIds=${batch.map(encodeURIComponent).join(",")}&fieldKeyType=name`;
+  // Delete individually using path-based approach
+  for (const id of recordIds) {
+    const deleteUrl = `${baseUrl}/api/table/${TEABLE_TRANSCRIPTS_TABLE_ID}/record/${id}?fieldKeyType=name`;
     await fetch(deleteUrl, {
       method: "DELETE",
       headers: {
