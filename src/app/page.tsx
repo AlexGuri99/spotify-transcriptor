@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, FormEvent } from "react";
+import { useState, useRef, useEffect, useCallback, FormEvent } from "react";
 import { Newsreader, Inter } from "next/font/google";
 import { Videotape } from "lucide-react";
 import Link from "next/link";
@@ -8,6 +8,7 @@ import Image from "next/image";
 import { useSession } from "next-auth/react";
 import iphonePic from "@/assets/iphone.png";
 import SignInModal from "@/components/sign-in-modal";
+import SignUpPrompt from "@/components/sign-up-prompt";
 import SiteFooter from "@/components/site-footer";
 
 // Load the high-contrast editorial serif to match the design aesthetic
@@ -53,7 +54,8 @@ type Status =
   | { phase: "processing"; message: string; countdown: number | null }
   | { phase: "done" }
   | { phase: "error"; error: string; detail?: string }
-  | { phase: "daily_limit"; error: string; detail?: string };
+  | { phase: "daily_limit"; error: string; detail?: string }
+  | { phase: "sign_up_required"; error: string; detail?: string };
 
 /* ------------------------------------------------------------------ */
 /* Helpers                                                            */
@@ -75,7 +77,9 @@ function segmentKey(seg: TranscriptSegment, i: number): string {
 
 export default function HomePage() {
   const { data: session } = useSession();
+  const [showSignUpPrompt, setShowSignUpPrompt] = useState(false);
   const [showSignIn, setShowSignIn] = useState(false);
+  const [signInMode, setSignInMode] = useState<"signin" | "signup">("signin");
   const [url, setUrl] = useState("");
   const [filterAds, setFilterAds] = useState(false);
   const [showTimestamps, setShowTimestamps] = useState(true);
@@ -88,6 +92,22 @@ export default function HomePage() {
 
   const transcriptRef = useRef<HTMLDivElement>(null);
   const pollingRef = useRef<number | null>(null);
+  const pendingUrlRef = useRef<string>("");
+
+  /* Re-submit pending URL after sign-up */
+  const handleSignedIn = useCallback(() => {
+    setShowSignIn(false);
+    const pending = pendingUrlRef.current;
+    pendingUrlRef.current = "";
+    if (pending) {
+      setUrl(pending);
+      // re-trigger submission with a synthetic event
+      setTimeout(() => {
+        const form = document.querySelector("form");
+        if (form) form.requestSubmit();
+      }, 300);
+    }
+  }, []);
 
   /* Clean up polling on unmount */
   useEffect(() => {
@@ -133,6 +153,10 @@ export default function HomePage() {
         if (countdownInterval) clearInterval(countdownInterval);
         if (errorType === "daily_limit") {
           setStatus({ phase: "daily_limit", error: errorMsg, detail: errorDetail });
+        } else if (errorType === "sign_up_required") {
+          setStatus({ phase: "sign_up_required", error: errorMsg, detail: errorDetail });
+          pendingUrlRef.current = trimmed;
+          setShowSignUpPrompt(true);
         } else {
           setStatus({ phase: "error", error: errorMsg, detail: errorDetail });
         }
@@ -515,7 +539,12 @@ export default function HomePage() {
 
       <SiteFooter />
 
-      <SignInModal open={showSignIn} onClose={() => setShowSignIn(false)} />
+      <SignUpPrompt
+        open={showSignUpPrompt}
+        onContinue={() => { setShowSignUpPrompt(false); setSignInMode("signup"); setShowSignIn(true); }}
+        onDismiss={() => { setShowSignUpPrompt(false); if (status.phase === "sign_up_required") setStatus({ phase: "idle" }); }}
+      />
+      <SignInModal open={showSignIn} onClose={() => { setShowSignIn(false); if (status.phase === "sign_up_required") setStatus({ phase: "idle" }); }} defaultMode={signInMode} onSignedIn={handleSignedIn} />
     </div>
   );
 }

@@ -99,7 +99,7 @@ export default function FeaturesPage() {
         </div>
 
         <div className="mb-12">
-          <p className={`font-semibold tracking-wide text-black mb-6 text-center text-lg ${editorialSerif.className}`}>
+          <p className="font-semibold tracking-wide text-black mb-6 text-center text-xl font-[family-name:var(--font-barlow-condensed)]">
             Product
           </p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -123,7 +123,7 @@ export default function FeaturesPage() {
         </div>
 
         <div className="mb-16">
-          <p className={`font-semibold tracking-wide text-black mb-6 text-center text-lg ${editorialSerif.className}`}>
+          <p className="font-semibold tracking-wide text-black mb-6 text-center text-xl font-[family-name:var(--font-barlow-condensed)]">
             Use Cases
           </p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

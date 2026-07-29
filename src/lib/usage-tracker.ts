@@ -29,7 +29,7 @@ export interface UserData {
 /* Constants                                                          */
 /* ------------------------------------------------------------------ */
 
-const FREE_PODS_PER_MONTH = 10;
+const FREE_PODS_PER_MONTH = 15;
 
 const TEABLE_BASE_URL: string | undefined = process.env.TEABLE_BASE_URL;
 const TEABLE_API_KEY: string | undefined = process.env.TEABLE_API_KEY;

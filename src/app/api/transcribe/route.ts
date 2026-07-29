@@ -12,7 +12,7 @@ import * as os from "os";
 import { Readable } from "stream";
 import { finished } from "stream/promises";
 import { findCachedEpisode, saveEpisodeRecord } from "@/lib/teable";
-import { addTranscription } from "@/lib/usage-tracker";
+import { addTranscription, getUsageStats } from "@/lib/usage-tracker";
 
 /* ------------------------------------------------------------------ */
 /* Types                                                             */
@@ -61,32 +61,6 @@ const MAX_CONCURRENT_TRANSCRIBERS = 3;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX_REQUESTS = 10;
 const rateLimitMap = new Map<string, number[]>();
-
-/** Daily limit — 3 transcriptions per IP for unauthenticated users */
-const DAILY_LIMIT = 3;
-const dailyUsageMap = new Map<string, { date: string; count: number }>();
-
-function checkDailyLimit(ip: string): boolean {
-  const today = new Date().toISOString().slice(0, 10);
-  const key = `${today}:${ip}`;
-  const entry = dailyUsageMap.get(key);
-  if (!entry || entry.date !== today) {
-    dailyUsageMap.set(key, { date: today, count: 0 });
-    return true;
-  }
-  return entry.count < DAILY_LIMIT;
-}
-
-function incrementDailyUsage(ip: string): void {
-  const today = new Date().toISOString().slice(0, 10);
-  const key = `${today}:${ip}`;
-  const entry = dailyUsageMap.get(key);
-  if (entry && entry.date === today) {
-    entry.count++;
-  } else {
-    dailyUsageMap.set(key, { date: today, count: 1 });
-  }
-}
 
 function isRateLimited(ip: string): boolean {
   const now = Date.now();
@@ -674,16 +648,31 @@ export async function POST(req: NextRequest): Promise<Response> {
     ?? "unknown";
 
   /* ------------------------------------------------------------------ */
-  /* Daily limit — unauthenticated users get 3 transcriptions per day   */
+  /* Anonymous users must sign up — no free transcriptions without auth */
   /* ------------------------------------------------------------------ */
   const session = await getServerSession(authOptions);
   const isAuthenticated = !!session?.user;
-  if (!isAuthenticated && !checkDailyLimit(ip)) {
+  if (!isAuthenticated) {
     return Response.json(
       {
-        type: "daily_limit",
-        error: "You've used all 3 free transcriptions for today.",
-        detail: "Sign in to continue transcribing with unlimited access.",
+        type: "sign_up_required",
+        error: "Sign up for free to transcribe this episode.",
+        detail: "No credit card needed. You get 15 free transcriptions every month.",
+      },
+      { status: 401 }
+    );
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Free plan monthly limit — 15 transcriptions per month              */
+  /* ------------------------------------------------------------------ */
+  const usage = await getUsageStats(session.user.email!).catch(() => null);
+  if (usage && usage.remaining <= 0) {
+    return Response.json(
+      {
+        type: "plan_limit",
+        error: `You've used all ${usage.planLimit} free transcriptions this month.`,
+        detail: "Upgrade to Pro for more, or wait until your plan resets next month.",
       },
       { status: 429 }
     );

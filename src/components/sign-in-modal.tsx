@@ -7,13 +7,15 @@ import { useEffect, useRef, useState, FormEvent } from "react";
 interface SignInModalProps {
   open: boolean;
   onClose: () => void;
+  defaultMode?: "signin" | "signup";
+  onSignedIn?: () => void;
 }
 
 type Mode = "signin" | "signup";
 
-export default function SignInModal({ open, onClose }: SignInModalProps) {
+export default function SignInModal({ open, onClose, defaultMode = "signin", onSignedIn }: SignInModalProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
-  const [mode, setMode] = useState<Mode>("signin");
+  const [mode, setMode] = useState<Mode>(defaultMode);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -90,7 +92,11 @@ export default function SignInModal({ open, onClose }: SignInModalProps) {
         return;
       }
 
-      window.location.href = "/dashboard";
+      if (onSignedIn) {
+        onSignedIn();
+      } else {
+        window.location.href = "/dashboard";
+      }
     } catch {
       setError("Something went wrong. Please try again.");
       setLoading(false);
@@ -104,9 +110,9 @@ export default function SignInModal({ open, onClose }: SignInModalProps) {
       onClick={(e) => e.target === overlayRef.current && onClose()}
     >
       <div className="mx-4 w-full max-w-sm rounded-2xl border border-gray-200 bg-white p-8 shadow-2xl">
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center justify-between mb-2">
           <h2 className="font-sans text-xl font-bold text-black">
-            {mode === "signin" ? "Sign in to Tranzkript" : "Create an account"}
+            {mode === "signin" ? "Sign in to Tranzkript" : "Sign up — it's free"}
           </h2>
           <button
             onClick={onClose}
@@ -115,6 +121,11 @@ export default function SignInModal({ open, onClose }: SignInModalProps) {
             <X className="h-4 w-4" />
           </button>
         </div>
+        {mode === "signup" && (
+          <p className="font-sans text-sm text-gray-500 mb-6 leading-relaxed">
+            No credit card needed. You get <strong>15 free transcriptions</strong> every month.
+          </p>
+        )}
 
         {/* Email / Password form */}
         <form onSubmit={handleSubmit} className="space-y-3 mb-4">

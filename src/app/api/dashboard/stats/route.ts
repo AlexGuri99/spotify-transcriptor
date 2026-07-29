@@ -10,7 +10,7 @@ export async function GET(_req: NextRequest) {
   }
 
   const stats = await getUsageStats(session.user.email);
-  const plan = stats.planLimit === 10 ? "free" : stats.planLimit === 999 ? "pro" : "credits";
+  const plan = stats.planLimit === 15 ? "free" : stats.planLimit === 999 ? "pro" : "credits";
 
   return NextResponse.json({
     ...stats,

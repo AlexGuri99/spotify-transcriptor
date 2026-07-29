@@ -36,17 +36,8 @@ export default function PricingPage() {
   /* Snap slider to available step values */
   function handleSliderChange(e: React.ChangeEvent<HTMLInputElement>) {
     const raw = Number(e.target.value);
-    let snapped: number;
-    if (raw <= 30) {
-      snapped = Math.round(raw / 5) * 5;
-      if (snapped < 15) snapped = 15;
-    } else if (raw <= 70) {
-      snapped = Math.round(raw / 5) * 5;
-      if (snapped < 35) snapped = 35;
-    } else {
-      snapped = Math.round(raw / 5) * 5;
-      if (snapped < 75) snapped = 75;
-    }
+    let snapped = Math.round(raw / 5) * 5;
+    if (snapped < 16) snapped = 16;
     setProPods(snapped);
   }
 
@@ -78,7 +69,7 @@ export default function PricingPage() {
           <h1 className={`text-4xl md:text-5xl font-bold italic tracking-tight leading-[1.1] text-black ${editorialSerif.className} font-editorial`}>
             Simple, transparent pricing
           </h1>
-          <p className="font-sans text-lg text-gray-500 mt-4 max-w-2xl mx-auto leading-relaxed">
+          <p className="font-[family-name:var(--font-barlow-condensed)] text-lg text-gray-500 mt-4 max-w-2xl mx-auto leading-relaxed">
             Pick the plan that fits how often you transcribe. No hidden fees, no surprises.
           </p>
         </div>
@@ -103,13 +94,13 @@ export default function PricingPage() {
             </div>
 
             <p className="font-sans text-sm text-gray-500 mb-6 leading-relaxed">
-              For occasional listeners who just need a quick transcript now and then.
+              15 free transcriptions every month. No daily limit, no credit card needed.
             </p>
 
             <ul className="space-y-3 mb-8 flex-1">
               <li className="flex items-start gap-3">
                 <Check className="h-4 w-4 text-black mt-0.5 shrink-0" />
-                <span className="font-sans text-sm text-gray-600">10 pods per month</span>
+                <span className="font-sans text-sm text-gray-600">15 transcriptions per month</span>
               </li>
               <li className="flex items-start gap-3">
                 <Check className="h-4 w-4 text-black mt-0.5 shrink-0" />
@@ -133,14 +124,14 @@ export default function PricingPage() {
             </Link>
           </div>
 
-          {/* Credits — Pay-As-You-Go */}
+          {/* PayGo — Pay-As-You-Go */}
           <div className="rounded-2xl border border-black bg-white p-8 shadow-[0_4px_24px_rgba(0,0,0,0.01)] flex flex-col ring-1 ring-black scale-[1.02] transition-all">
             <div className="flex items-center gap-3 mb-4">
               <div className="rounded-xl bg-black/5 p-2.5">
                 <Zap className="h-5 w-5 text-black" />
               </div>
               <div>
-                <h2 className="font-sans text-lg font-bold text-black">Credits</h2>
+                <h2 className="font-sans text-lg font-bold text-black">PayGo</h2>
                 <p className="font-sans text-xs font-medium text-gray-400">Pay-As-You-Go</p>
               </div>
             </div>
@@ -212,7 +203,7 @@ export default function PricingPage() {
             <div className="mb-6">
               <input
                 type="range"
-                min="15"
+                min="16"
                 max="150"
                 step="5"
                 value={proPods}
@@ -220,15 +211,15 @@ export default function PricingPage() {
                 className="w-full accent-black h-2 rounded-full appearance-none cursor-pointer bg-gray-200 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-black [&::-webkit-slider-thumb]:shadow-md"
               />
               <div className="flex justify-between mt-2">
-                <span className="font-sans text-[11px] text-gray-400">15 pods</span>
+                <span className="font-sans text-[11px] text-gray-400">16 pods</span>
                 <span className="font-sans text-[11px] text-gray-400">150+ pods</span>
               </div>
             </div>
 
             {/* Tier indicators */}
             <div className="grid grid-cols-3 gap-2 mb-6">
-              <div className={`rounded-lg border px-3 py-2 text-center ${proPods >= 15 && proPods <= 30 ? "border-black bg-black/5" : "border-gray-100"}`}>
-                <p className="font-sans text-xs font-semibold text-black">15–30</p>
+              <div className={`rounded-lg border px-3 py-2 text-center ${proPods >= 16 && proPods <= 30 ? "border-black bg-black/5" : "border-gray-100"}`}>
+                <p className="font-sans text-xs font-semibold text-black">16–30</p>
                 <p className="font-sans text-[11px] text-gray-500">$0.15/pod</p>
               </div>
               <div className={`rounded-lg border px-3 py-2 text-center ${proPods >= 35 && proPods <= 70 ? "border-black bg-black/5" : "border-gray-100"}`}>
