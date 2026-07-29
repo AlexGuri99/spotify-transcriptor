@@ -12,7 +12,7 @@ import * as os from "os";
 import { Readable } from "stream";
 import { finished } from "stream/promises";
 import { findCachedEpisode, saveEpisodeRecord } from "@/lib/teable";
-import { addTranscription, getUsageStats } from "@/lib/usage-tracker";
+import { getUsageStats } from "@/lib/usage-tracker";
 
 /* ------------------------------------------------------------------ */
 /* Types                                                             */
@@ -788,20 +788,6 @@ export async function POST(req: NextRequest): Promise<Response> {
           },
         });
 
-        /* Track usage for authenticated users */
-      if (isAuthenticated && session?.user?.email) {
-        try {
-          await addTranscription(session.user.email, {
-            id: episodeId,
-            episodeTitle: metadata.episodeTitle,
-            spotifyUrl: trimmedUrl,
-            timestamp: new Date().toISOString(),
-            executionTime: cachedEpisode.executionTime,
-          });
-        } catch (e) {
-          console.warn("[Usage] Failed to log cached transcription:", e);
-        }
-      }
 
       return; /* early exit â€” finally block handles lock cleanup */
       }
@@ -976,23 +962,9 @@ export async function POST(req: NextRequest): Promise<Response> {
         episodeTitle: metadata.episodeTitle,
         segments: finalSegments,
         executionTime: Number(elapsedSeconds),
+        email: session?.user?.email ?? undefined,
+        timestamp: new Date().toISOString(),
       });
-      console.log("ðŸŽ‰ [Pipeline Sync Complete] Teable write confirmed!");
-
-      if (session?.user?.email) {
-        /* Track usage for authenticated users */
-        try {
-          await addTranscription(session.user.email, {
-            id: episodeId,
-            episodeTitle: metadata.episodeTitle,
-            spotifyUrl: trimmedUrl,
-            timestamp: new Date().toISOString(),
-            executionTime: Number(elapsedSeconds),
-          });
-        } catch (e) {
-          console.warn("[Usage] Failed to log transcription:", e);
-        }
-      }
 
       await send({
         type: "result",

@@ -188,6 +188,8 @@ export async function saveEpisodeRecord(params: {
   episodeTitle: string;
   segments: TranscriptSegment[];
   executionTime: number;
+  email?: string;
+  timestamp?: string;
 }): Promise<void> {
   console.log("📦 [Teable Save Attempt] Preparing payload structure for:", {
     episodeId: params.episodeId,
@@ -209,17 +211,18 @@ export async function saveEpisodeRecord(params: {
 
   console.log("🌐 [Teable Save Endpoint]:", RECORD_ENDPOINT);
 
+  const fields: Record<string, unknown> = {
+    spotify_episode_id: params.episodeId,
+    episodeTitle: params.episodeTitle,
+    segments: JSON.stringify(params.segments),
+    execution_time: params.executionTime,
+  };
+
+  if (params.email) fields.email = params.email.toLowerCase().trim();
+  if (params.timestamp) fields.timestamp = params.timestamp;
+
   const payload = {
-    records: [
-      {
-        fields: {
-          spotify_episode_id: params.episodeId,
-          episodeTitle: params.episodeTitle,
-          segments: JSON.stringify(params.segments),
-          execution_time: params.executionTime,
-        },
-      },
-    ],
+    records: [{ fields }],
     fieldKeyType: "name",
     typecast: true,
   };
