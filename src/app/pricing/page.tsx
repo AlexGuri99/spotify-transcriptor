@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Newsreader, Inter } from "next/font/google";
-import { Videotape, Check, Sparkles, Zap, Sliders } from "lucide-react";
+import { Videotape, Sparkles, Zap, Sliders } from "lucide-react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import SignInModal from "@/components/sign-in-modal";
@@ -97,25 +97,7 @@ export default function PricingPage() {
               15 free transcriptions every month. No daily limit, no credit card needed.
             </p>
 
-            <ul className="space-y-3 mb-8 flex-1">
-              <li className="flex items-start gap-3">
-                <Check className="h-4 w-4 text-black mt-0.5 shrink-0" />
-                <span className="font-sans text-sm text-gray-600">15 transcriptions per month</span>
-              </li>
-              <li className="flex items-start gap-3">
-                <Check className="h-4 w-4 text-black mt-0.5 shrink-0" />
-                <span className="font-sans text-sm text-gray-600">Standard processing speed</span>
-              </li>
-              <li className="flex items-start gap-3">
-                <Check className="h-4 w-4 text-black mt-0.5 shrink-0" />
-                <span className="font-sans text-sm text-gray-600">Basic ad filtering</span>
-              </li>
-              <li className="flex items-start gap-3">
-                <Check className="h-4 w-4 text-black mt-0.5 shrink-0" />
-                <span className="font-sans text-sm text-gray-600">TXT export</span>
-              </li>
-            </ul>
-
+            
             <Link
               href="/"
               className="font-sans block text-center rounded-xl border border-gray-200 px-6 py-3 text-sm font-medium text-gray-700 hover:border-black hover:text-black transition-all"
@@ -145,29 +127,7 @@ export default function PricingPage() {
               For users who transcribe sporadically and don&apos;t want a monthly commitment.
             </p>
 
-            <ul className="space-y-3 mb-8 flex-1">
-              <li className="flex items-start gap-3">
-                <Check className="h-4 w-4 text-black mt-0.5 shrink-0" />
-                <span className="font-sans text-sm text-gray-600">Buy credits in packs of 10 ($2) or 50 ($10)</span>
-              </li>
-              <li className="flex items-start gap-3">
-                <Check className="h-4 w-4 text-black mt-0.5 shrink-0" />
-                <span className="font-sans text-sm text-gray-600">Credits never expire</span>
-              </li>
-              <li className="flex items-start gap-3">
-                <Check className="h-4 w-4 text-black mt-0.5 shrink-0" />
-                <span className="font-sans text-sm text-gray-600">Full ad filtering included</span>
-              </li>
-              <li className="flex items-start gap-3">
-                <Check className="h-4 w-4 text-black mt-0.5 shrink-0" />
-                <span className="font-sans text-sm text-gray-600">Priority processing</span>
-              </li>
-              <li className="flex items-start gap-3">
-                <Check className="h-4 w-4 text-black mt-0.5 shrink-0" />
-                <span className="font-sans text-sm text-gray-600">TXT export</span>
-              </li>
-            </ul>
-
+            
             <button
               onClick={() => session?.user ? undefined : setShowSignIn(true)}
               className="font-sans block w-full text-center rounded-xl bg-black px-6 py-3 text-sm font-medium text-white hover:bg-gray-900 transition-all shadow-sm"
@@ -236,29 +196,7 @@ export default function PricingPage() {
               For power users, researchers, and teams who transcribe at scale.
             </p>
 
-            <ul className="space-y-3 mb-8 flex-1">
-              <li className="flex items-start gap-3">
-                <Check className="h-4 w-4 text-black mt-0.5 shrink-0" />
-                <span className="font-sans text-sm text-gray-600">{proPods} pods per month</span>
-              </li>
-              <li className="flex items-start gap-3">
-                <Check className="h-4 w-4 text-black mt-0.5 shrink-0" />
-                <span className="font-sans text-sm text-gray-600">Priority processing queue</span>
-              </li>
-              <li className="flex items-start gap-3">
-                <Check className="h-4 w-4 text-black mt-0.5 shrink-0" />
-                <span className="font-sans text-sm text-gray-600">Advanced ad filtering</span>
-              </li>
-              <li className="flex items-start gap-3">
-                <Check className="h-4 w-4 text-black mt-0.5 shrink-0" />
-                <span className="font-sans text-sm text-gray-600">TXT export</span>
-              </li>
-              <li className="flex items-start gap-3">
-                <Check className="h-4 w-4 text-black mt-0.5 shrink-0" />
-                <span className="font-sans text-sm text-gray-600">Early access to new features</span>
-              </li>
-            </ul>
-
+            
             <button
               onClick={() => session?.user ? undefined : setShowSignIn(true)}
               className="font-sans block w-full text-center rounded-xl border border-gray-200 px-6 py-3 text-sm font-medium text-gray-700 hover:border-black hover:text-black transition-all"
