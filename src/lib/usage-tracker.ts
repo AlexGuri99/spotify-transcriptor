@@ -233,6 +233,7 @@ export async function addTranscription(
           spotify_episode_id: episodeId,
           execution_time: record.executionTime,
           episodeTitle: record.episodeTitle,
+          timestamp: record.timestamp,
           segments: "[]",
         },
       }],
@@ -307,7 +308,7 @@ async function getTranscriptRecords(email: string): Promise<TranscriptionRecord[
     id: r.fields.spotify_episode_id ?? "",
     episodeTitle: r.fields.episodeTitle ?? "",
     spotifyUrl: `https://open.spotify.com/episode/${r.fields.spotify_episode_id}`,
-    timestamp: r.createdTime ?? new Date().toISOString(),
+    timestamp: r.fields.timestamp ?? r.createdTime ?? new Date().toISOString(),
     executionTime: r.fields.execution_time ?? 0,
   }));
 }

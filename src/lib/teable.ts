@@ -6,6 +6,7 @@
  *   episodeTitle        — Text (episode title from oEmbed)
  *   segments            — Long Text (JSON-stringified TranscriptSegment[])
  *   execution_time      — Number (seconds the Whisper pipeline took)
+ *   timestamp           — Date (ISO date like 2026-07-29, when the transcription happened)
  * ------------------------------------------------------------------ */
 
 /* ------------------------------------------------------------------ */
