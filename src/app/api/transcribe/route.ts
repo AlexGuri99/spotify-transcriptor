@@ -666,7 +666,13 @@ export async function POST(req: NextRequest): Promise<Response> {
   /* ------------------------------------------------------------------ */
   /* Free plan monthly limit — 15 transcriptions per month              */
   /* ------------------------------------------------------------------ */
-  const usage = await getUsageStats(session.user.email!).catch(() => null);
+  if (!session?.user?.email) {
+    return Response.json(
+      { type: "error", error: "Authentication error." },
+      { status: 401 }
+    );
+  }
+  const usage = await getUsageStats(session.user.email).catch(() => null);
   if (usage && usage.remaining <= 0) {
     return Response.json(
       {
