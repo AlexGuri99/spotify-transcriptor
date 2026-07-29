@@ -3,23 +3,6 @@ import { identifyProduct } from "@/lib/whop-products";
 import { setUserPlan, getUserData } from "@/lib/usage-tracker";
 
 /* ------------------------------------------------------------------ */
-/* Types based on Whop webhook events                                 */
-/* ------------------------------------------------------------------ */
-
-interface WhopWebhookPayload {
-  type: string;
-  data: {
-    id: string;
-    product_id: string;
-    customer_email?: string;
-    status?: string;
-    created_at?: string;
-    expires_at?: string;
-    [key: string]: unknown;
-  };
-}
-
-/* ------------------------------------------------------------------ */
 /* Webhook handler                                                    */
 /* ------------------------------------------------------------------ */
 
@@ -36,7 +19,7 @@ export async function POST(req: NextRequest) {
   const signature = req.headers.get("x-whop-signature") ?? "";
   const rawBody = await req.text();
 
-  // Simple HMAC-SHA256 verification
+  // HMAC-SHA256 verification
   const crypto = require("crypto");
   const expected = crypto
     .createHmac("sha256", secret)
@@ -49,74 +32,101 @@ export async function POST(req: NextRequest) {
   }
 
   /* ---------------------------------------------------------------- */
-  /* Parse and handle the event                                       */
+  /* Parse the event                                                  */
   /* ---------------------------------------------------------------- */
-  let payload: WhopWebhookPayload;
+  let payload: any;
   try {
     payload = JSON.parse(rawBody);
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { type, data } = payload;
-  const customerEmail = data.customer_email ?? "";
-  const productId = data.product_id ?? "";
+  const eventType: string = payload.type ?? "";
+  const eventData: any = payload.data ?? {};
 
-  if (!customerEmail || !productId) {
-    console.error("[Whop Webhook] Missing customer_email or product_id", { type, data });
-    return NextResponse.json({ ok: true }); // Acknowledge but don't process
+  // Log the full event for debugging (first time)
+  console.log(`[Whop Webhook] Event: ${eventType}`);
+  console.log(`[Whop Webhook] Payload keys: ${Object.keys(payload).join(", ")}`);
+  console.log(`[Whop Webhook] Data keys: ${Object.keys(eventData).join(", ")}`);
+
+  /* ---------------------------------------------------------------- */
+  /* Extract identifiers — Whop may nest them differently per event   */
+  /* ---------------------------------------------------------------- */
+
+  // Try multiple possible locations for product_id and customer email
+  const productId =
+    eventData.product_id ??
+    eventData.product?.id ??
+    eventData.membership?.product_id ??
+    eventData.payment?.product_id ??
+    "";
+
+  const customerEmail =
+    eventData.customer_email ??
+    eventData.email ??
+    eventData.customer?.email ??
+    eventData.user?.email ??
+    eventData.membership?.user_email ??
+    eventData.payment?.customer_email ??
+    "";
+
+  console.log(`[Whop Webhook] Extracted — productId: ${productId}, email: ${customerEmail}`);
+
+  if (!productId || !customerEmail) {
+    console.log("[Whop Webhook] Missing product_id or customer_email — acknowledging but not processing");
+    return NextResponse.json({ ok: true });
   }
 
   const identified = identifyProduct(productId);
 
-  console.log(`[Whop Webhook] Event: ${type} | Product: ${productId} → ${identified.type} | Email: ${customerEmail}`);
-
   try {
-    switch (type) {
+    switch (eventType) {
       /* ------------------------------------------------------------ */
-      /* PayGo — one-time purchase: add credits to user's account     */
+      /* PayGo — one-time payment succeeded: add credits              */
       /* ------------------------------------------------------------ */
-      case "purchase.created":
-      case "purchase.completed":
+      case "payment.succeeded":
         if (identified.type === "paygo" && identified.credits) {
           const user = await getUserData(customerEmail);
           const currentCredits = user.creditsRemaining ?? 0;
           await setUserPlan(customerEmail, "credits", currentCredits + identified.credits);
           console.log(
-            `[Whop Webhook] Added ${identified.credits} credits to ${customerEmail} (was ${currentCredits}, now ${currentCredits + identified.credits})`
+            `[Whop Webhook] ✅ Added ${identified.credits} credits to ${customerEmail} (${currentCredits} → ${currentCredits + identified.credits})`
           );
-        } else if (identified.type === "pro" && identified.pods) {
-          // Pro subscription purchase
-          await setUserPlan(customerEmail, "pro", identified.pods);
-          console.log(`[Whop Webhook] Set ${customerEmail} to Pro (${identified.pods} pods)`);
         }
         break;
 
       /* ------------------------------------------------------------ */
       /* Pro subscription events                                       */
       /* ------------------------------------------------------------ */
-      case "subscription.created":
-      case "subscription.updated":
+      case "membership.activated":
+      case "membership.cancel_at_period_end_changed":
         if (identified.type === "pro" && identified.pods) {
           await setUserPlan(customerEmail, "pro", identified.pods);
-          console.log(`[Whop Webhook] Subscription ${type}: ${customerEmail} → Pro (${identified.pods} pods)`);
+          console.log(`[Whop Webhook] ✅ ${eventType}: ${customerEmail} → Pro (${identified.pods} pods)`);
         }
         break;
 
-      case "subscription.cancelled":
-      case "subscription.expired":
+      case "membership.deactivated":
         if (identified.type === "pro") {
-          // Revert to free plan
           await setUserPlan(customerEmail, "free", 0);
-          console.log(`[Whop Webhook] Subscription ${type}: ${customerEmail} reverted to free`);
+          console.log(`[Whop Webhook] ✅ ${eventType}: ${customerEmail} reverted to free`);
         }
+        break;
+
+      /* ------------------------------------------------------------ */
+      /* Also handle payment.created as a fallback for PayGo          */
+      /* ------------------------------------------------------------ */
+      case "payment.created":
+        // payment.created fires before payment.succeeded;
+        // we only act on payment.succeeded to avoid double-crediting.
+        console.log(`[Whop Webhook] ℹ️ Ignoring payment.created — waiting for payment.succeeded`);
         break;
 
       default:
-        console.log(`[Whop Webhook] Unhandled event type: ${type}`);
+        console.log(`[Whop Webhook] ℹ️ Unhandled event type: ${eventType}`);
     }
   } catch (err) {
-    console.error(`[Whop Webhook] Error processing event ${type}:`, err);
+    console.error(`[Whop Webhook] Error processing ${eventType}:`, err);
   }
 
   return NextResponse.json({ ok: true });
