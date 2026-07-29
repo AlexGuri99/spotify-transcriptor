@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Newsreader, Inter } from "next/font/google";
 import { Videotape, Sparkles, Zap, Sliders } from "lucide-react";
 import Link from "next/link";
@@ -26,40 +26,13 @@ function getProTier(pods: number): { pricePerPod: number; label: string } {
   return { pricePerPod: 0.11, label: "$0.11 / pod" };
 }
 
-interface WhopProduct {
-  productId: string;
-  price: number;
-  credits: number;
-}
-
-interface WhopProProduct {
-  productId: string;
-  pods: number;
-  monthlyPrice: number;
-  pricePerPod: number;
-}
-
 export default function PricingPage() {
   const { data: session } = useSession();
   const [showSignIn, setShowSignIn] = useState(false);
   const [proPods, setProPods] = useState(10);
-  const [paygoProducts, setPaygoProducts] = useState<WhopProduct[]>([]);
-  const [proProducts, setProProducts] = useState<WhopProProduct[]>([]);
-  const [loadingProducts, setLoadingProducts] = useState(true);
 
   const tier = getProTier(proPods);
   const proTotal = (proPods * tier.pricePerPod).toFixed(2);
-
-  useEffect(() => {
-    fetch("/api/whop/products")
-      .then((r) => r.json())
-      .then((data) => {
-        setPaygoProducts(data.paygo ?? []);
-        setProProducts(data.pro ?? []);
-        setLoadingProducts(false);
-      })
-      .catch(() => setLoadingProducts(false));
-  }, []);
 
   /* Snap slider to available step values */
   function handleSliderChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -67,11 +40,6 @@ export default function PricingPage() {
     let snapped = Math.round(raw / 5) * 5;
     if (snapped < 6) snapped = 6;
     setProPods(snapped);
-  }
-
-  function getCheckoutUrl(productId: string): string {
-    const email = session?.user?.email ?? "";
-    return `https://whop.com/checkout/${productId}/?email=${encodeURIComponent(email)}`;
   }
 
   return (
@@ -138,8 +106,8 @@ export default function PricingPage() {
             </Link>
           </div>
 
-          {/* PayGo — Pay-As-You-Go */}
-          <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-[0_4px_24px_rgba(0,0,0,0.01)] flex flex-col hover:border-gray-300 transition-all">
+          {/* PayGo — Pay-As-You-Go (Coming Soon) */}
+          <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-[0_4px_24px_rgba(0,0,0,0.01)] flex flex-col opacity-50 select-none">
             <div className="flex items-center gap-3 mb-4">
               <div className="rounded-xl bg-black/5 p-2.5">
                 <Zap className="h-5 w-5 text-black" />
@@ -159,40 +127,15 @@ export default function PricingPage() {
               For users who transcribe sporadically and don&apos;t want a monthly commitment.
             </p>
 
-            {/* Top-up buttons */}
-            <div className="mt-auto space-y-3">
-              <p className="font-sans text-xs font-medium text-gray-500">Buy credits:</p>
-              {loadingProducts ? (
-                <div className="flex gap-2">
-                  {[5, 10, 20, 30].map((amt) => (
-                    <div key={amt} className="flex-1 h-10 rounded-xl bg-gray-100 animate-pulse" />
-                  ))}
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 gap-2">
-                  {paygoProducts.map((p) => (
-                    <a
-                      key={p.productId}
-                      href={getCheckoutUrl(p.productId)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="font-sans block text-center rounded-xl bg-black px-4 py-2.5 text-sm font-medium text-white hover:bg-gray-900 transition-all"
-                    >
-                      ${p.price} — {p.credits} pods
-                    </a>
-                  ))}
-                </div>
-              )}
-              {!loadingProducts && paygoProducts.length === 0 && (
-                <span className="font-sans block w-full text-center rounded-xl bg-gray-200 px-6 py-3 text-sm font-medium text-gray-400">
-                  Coming soon
-                </span>
-              )}
+            <div className="mt-auto">
+              <span className="font-sans block w-full text-center rounded-xl bg-gray-200 px-6 py-3 text-sm font-medium text-gray-400">
+                Coming soon
+              </span>
             </div>
           </div>
 
-          {/* Pro — Monthly Subscription with slider */}
-          <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-[0_4px_24px_rgba(0,0,0,0.01)] flex flex-col hover:border-gray-300 transition-all">
+          {/* Pro — Monthly Subscription with slider (Coming Soon) */}
+          <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-[0_4px_24px_rgba(0,0,0,0.01)] flex flex-col opacity-50 select-none">
             <div className="flex items-center gap-3 mb-4">
               <div className="rounded-xl bg-black/5 p-2.5">
                 <Sliders className="h-5 w-5 text-black" />
@@ -251,34 +194,11 @@ export default function PricingPage() {
               For power users, researchers, and teams who transcribe at scale.
             </p>
 
-            {/* Subscribe button */}
+            {/* Coming soon */}
             <div className="mt-auto">
-              {loadingProducts ? (
-                <span className="font-sans block w-full text-center rounded-xl bg-gray-200 px-6 py-3 text-sm font-medium text-gray-400">
-                  Loading...
-                </span>
-              ) : (
-                (() => {
-                  const proProduct = proProducts.find((p) => p.pods === proPods);
-                  if (!proProduct) {
-                    return (
-                      <span className="font-sans block w-full text-center rounded-xl bg-gray-200 px-6 py-3 text-sm font-medium text-gray-400">
-                        Coming soon
-                      </span>
-                    );
-                  }
-                  return (
-                    <a
-                      href={getCheckoutUrl(proProduct.productId)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="font-sans block text-center rounded-xl bg-black px-6 py-3 text-sm font-medium text-white hover:bg-gray-900 transition-all"
-                    >
-                      Subscribe — ${proTotal}/month
-                    </a>
-                  );
-                })()
-              )}
+              <span className="font-sans block w-full text-center rounded-xl bg-gray-200 px-6 py-3 text-sm font-medium text-gray-400">
+                Coming soon
+              </span>
             </div>
           </div>
         </div>
@@ -287,7 +207,7 @@ export default function PricingPage() {
         <div className="max-w-2xl mx-auto mt-16 text-center">
           <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-[0_4px_24px_rgba(0,0,0,0.01)]">
             <p className="font-sans text-sm text-gray-500 leading-relaxed">
-              A &ldquo;pod&rdquo; is one episode transcription of any length. All plans include access to the same transcription engine. Payments are processed securely by Whop.
+              A &ldquo;pod&rdquo; is one episode transcription of any length. All plans include access to the same transcription engine.
             </p>
           </div>
         </div>
