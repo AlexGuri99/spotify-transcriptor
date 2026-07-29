@@ -114,6 +114,25 @@ export async function POST(req: NextRequest) {
         break;
 
       /* ------------------------------------------------------------ */
+      /* Refunds — reverse the credits or revert Pro to free          */
+      /* ------------------------------------------------------------ */
+      case "refund.created":
+      case "refund.updated":
+        if (identified.type === "paygo" && identified.credits) {
+          const user = await getUserData(customerEmail);
+          const currentCredits = user.creditsRemaining ?? 0;
+          const newCredits = Math.max(0, currentCredits - identified.credits);
+          await setUserPlan(customerEmail, currentCredits - newCredits <= 0 ? "free" : "credits", newCredits);
+          console.log(
+            `[Whop Webhook] 🔄 Refund: removed ${identified.credits} credits from ${customerEmail} (${currentCredits} → ${newCredits})`
+          );
+        } else if (identified.type === "pro") {
+          await setUserPlan(customerEmail, "free", 0);
+          console.log(`[Whop Webhook] 🔄 Refund: ${customerEmail} reverted to free`);
+        }
+        break;
+
+      /* ------------------------------------------------------------ */
       /* Also handle payment.created as a fallback for PayGo          */
       /* ------------------------------------------------------------ */
       case "payment.created":
