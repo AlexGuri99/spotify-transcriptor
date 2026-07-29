@@ -743,6 +743,9 @@ function SettingsTab({ email }: { email: string }) {
   const [cpError, setCpError] = useState("");
   const [cpSuccess, setCpSuccess] = useState("");
   const [cpLoading, setCpLoading] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   useEffect(() => {
     fetch("/api/dashboard/stats")
@@ -795,6 +798,7 @@ function SettingsTab({ email }: { email: string }) {
   }
 
   return (
+    <>
     <div className="space-y-6">
       {/* Current plan */}
       <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-[0_4px_24px_rgba(0,0,0,0.01)]">
@@ -832,9 +836,19 @@ function SettingsTab({ email }: { email: string }) {
         )}
       </div>
 
-      {/* Change password */}
+      {/* Payment methods - placeholder */}
       <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-[0_4px_24px_rgba(0,0,0,0.01)]">
-        <h3 className="font-sans font-bold text-black mb-1">Change Password</h3>
+        <h3 className="font-sans font-bold text-black mb-4">Payment Methods</h3>
+        <div className="p-6 rounded-xl bg-gray-50 border border-gray-100 text-center">
+          <p className="font-sans text-sm text-gray-400">
+            Payments are not live yet. You can continue using the free tier while we set up billing.
+          </p>
+        </div>
+      </div>
+
+      {/* Account */}
+      <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-[0_4px_24px_rgba(0,0,0,0.01)]">
+        <h3 className="font-sans font-bold text-black mb-1">Account</h3>
         <p className="font-sans text-xs text-gray-400 mb-5">Update your account password</p>
 
         <form onSubmit={handleChangePassword} className="space-y-3 max-w-sm">
@@ -863,26 +877,95 @@ function SettingsTab({ email }: { email: string }) {
           {cpError && <p className="font-sans text-xs text-red-500">{cpError}</p>}
           {cpSuccess && <p className="font-sans text-xs text-green-600">{cpSuccess}</p>}
 
-          <button
-            type="submit"
-            disabled={cpLoading}
-            className="font-sans rounded-xl bg-black px-5 py-2.5 text-sm font-medium text-white hover:bg-gray-900 transition-all disabled:opacity-50 cursor-pointer"
-          >
-            {cpLoading ? "Updating..." : "Update Password"}
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              type="submit"
+              disabled={cpLoading}
+              className="font-sans rounded-xl bg-black px-5 py-2.5 text-sm font-medium text-white hover:bg-gray-900 transition-all disabled:opacity-50 cursor-pointer"
+            >
+              {cpLoading ? "Updating..." : "Update Password"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowDeleteConfirm(true)}
+              className="font-sans rounded-xl border border-red-200 px-5 py-2.5 text-sm font-medium text-red-500 hover:border-red-400 hover:bg-red-50 transition-all cursor-pointer"
+            >
+              Delete account
+            </button>
+          </div>
         </form>
       </div>
+    </div>
 
-      {/* Payment methods - placeholder */}
-      <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-[0_4px_24px_rgba(0,0,0,0.01)]">
-        <h3 className="font-sans font-bold text-black mb-4">Payment Methods</h3>
-        <div className="p-6 rounded-xl bg-gray-50 border border-gray-100 text-center">
-          <p className="font-sans text-sm text-gray-400">
-            Payments are not live yet. You can continue using the free tier while we set up billing.
+    {/* Delete confirmation modal */}
+    {showDeleteConfirm && (
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm p-4"
+        onClick={(e) => { if (e.target === e.currentTarget) setShowDeleteConfirm(false); }}
+      >
+        <div className="mx-auto w-full max-w-md rounded-2xl border border-gray-200 bg-white p-8 shadow-2xl">
+          <h3 className="font-sans text-lg font-bold text-black mb-3">Delete account</h3>
+          <p className="font-sans text-sm text-gray-600 leading-relaxed mb-2">
+            Are you sure you want to delete your account? This will permanently remove:
           </p>
+          <ul className="font-sans text-sm text-gray-600 leading-relaxed mb-6 list-disc pl-5 space-y-1">
+            <li>Your account and profile</li>
+            <li>All your transcriptions</li>
+            <li>All saved data associated with your account</li>
+          </ul>
+          <p className="font-sans text-sm font-medium text-red-500 mb-6">
+            This action cannot be undone.
+          </p>
+
+          {deleteError && (
+            <p className="font-sans text-xs text-red-500 mb-4">{deleteError}</p>
+          )}
+
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => { setShowDeleteConfirm(false); setDeleteError(""); }}
+              disabled={deleteLoading}
+              className="font-sans flex-1 rounded-xl border border-gray-200 px-5 py-2.5 text-sm font-medium text-gray-700 hover:border-black hover:text-black transition-all disabled:opacity-50 cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={async () => {
+                setDeleteLoading(true);
+                setDeleteError("");
+                try {
+                  const res = await fetch("/api/auth/delete-account", { method: "POST" });
+                  const data = await res.json();
+                  if (!res.ok) {
+                    setDeleteError(data.error || "Failed to delete account.");
+                    setDeleteLoading(false);
+                    return;
+                  }
+                  // Sign out and redirect to home
+                  await signOut({ redirect: false });
+                  window.location.href = "/";
+                } catch {
+                  setDeleteError("Something went wrong. Please try again.");
+                  setDeleteLoading(false);
+                }
+              }}
+              disabled={deleteLoading}
+              className="font-sans flex-1 rounded-xl bg-red-500 px-5 py-2.5 text-sm font-medium text-white hover:bg-red-600 transition-all disabled:opacity-50 cursor-pointer"
+            >
+              {deleteLoading ? (
+                <>
+                  <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white/20 border-t-white mr-2" />
+                  Deleting...
+                </>
+              ) : (
+                "Yes, delete my account"
+              )}
+            </button>
+          </div>
         </div>
       </div>
-    </div>
+    )}
+    </>
   );
 }
 

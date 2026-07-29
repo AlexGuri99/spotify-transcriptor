@@ -91,6 +91,23 @@ async function createRecord(tableId: string, fields: Record<string, unknown>): P
   return data?.records?.[0]?.id ?? null;
 }
 
+async function deleteRecord(tableId: string, recordId: string): Promise<boolean> {
+  const { baseUrl, apiKey } = requireConfig();
+
+  const url = `${baseUrl}/api/table/${tableId}/record?recordIds=${encodeURIComponent(recordId)}&fieldKeyType=name`;
+
+  const res = await fetch(url, {
+    method: "DELETE",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      Accept: "application/json",
+    },
+    signal: AbortSignal.timeout(8_000),
+  });
+
+  return res.ok;
+}
+
 async function updateRecord(tableId: string, recordId: string, fields: Record<string, unknown>): Promise<boolean> {
   const { baseUrl, apiKey } = requireConfig();
 
@@ -201,6 +218,59 @@ export async function setUserPlan(
     creditsRemaining: creditsRemaining ?? (record.fields.creditsRemaining as number) ?? 0,
     provider: (record.fields.provider as "" | "credentials" | "google" | "github") ?? "",
   };
+}
+
+export async function deleteUser(email: string): Promise<boolean> {
+  const { baseUrl, apiKey } = requireConfig();
+  if (!TEABLE_USERS_TABLE_ID) throw new Error("TEABLE_USERS_TABLE_ID not set");
+
+  const userRecord = await findRecordByEmail(TEABLE_USERS_TABLE_ID, email);
+  if (!userRecord) return false;
+
+  // Delete all transcripts for this user
+  await deleteTranscriptsForUser(email);
+
+  // Delete the user record
+  return deleteRecord(TEABLE_USERS_TABLE_ID, userRecord.id);
+}
+
+async function deleteTranscriptsForUser(email: string): Promise<void> {
+  const { baseUrl, apiKey } = requireConfig();
+  if (!TEABLE_TRANSCRIPTS_TABLE_ID) return;
+
+  const normalizedEmail = email.toLowerCase().trim();
+
+  const filter = JSON.stringify({
+    conjunction: "and",
+    filterSet: [{ fieldId: "email", operator: "is", value: normalizedEmail }],
+  });
+
+  const url = `${baseUrl}/api/table/${TEABLE_TRANSCRIPTS_TABLE_ID}/record?filter=${encodeURIComponent(filter)}&fieldKeyType=name`;
+
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" },
+    signal: AbortSignal.timeout(8_000),
+  });
+
+  if (!res.ok) return;
+  const data: any = await res.json();
+  if (!data?.records?.length) return;
+
+  const recordIds = data.records.map((r: any) => r.id);
+
+  // Delete in batches of 100 (Teable max per request)
+  for (let i = 0; i < recordIds.length; i += 100) {
+    const batch = recordIds.slice(i, i + 100);
+    const deleteUrl = `${baseUrl}/api/table/${TEABLE_TRANSCRIPTS_TABLE_ID}/record?recordIds=${batch.map(encodeURIComponent).join(",")}&fieldKeyType=name`;
+    await fetch(deleteUrl, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        Accept: "application/json",
+      },
+      signal: AbortSignal.timeout(8_000),
+    });
+  }
 }
 
 /* ------------------------------------------------------------------ */
