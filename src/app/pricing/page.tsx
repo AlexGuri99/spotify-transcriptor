@@ -21,9 +21,9 @@ const transcriptSans = Inter({
 });
 
 function getProTier(pods: number): { pricePerPod: number; label: string } {
-  if (pods <= 30) return { pricePerPod: 0.15, label: "$0.15 / pod" };
-  if (pods <= 70) return { pricePerPod: 0.12, label: "$0.12 / pod" };
-  return { pricePerPod: 0.09, label: "$0.09 / pod" };
+  if (pods <= 30) return { pricePerPod: 0.17, label: "$0.17 / pod" };
+  if (pods <= 75) return { pricePerPod: 0.14, label: "$0.14 / pod" };
+  return { pricePerPod: 0.11, label: "$0.11 / pod" };
 }
 
 export default function PricingPage() {
@@ -119,7 +119,7 @@ export default function PricingPage() {
             </div>
 
             <div className="mb-4">
-              <span className="font-sans text-3xl font-bold text-black">$0.20</span>
+              <span className="font-sans text-3xl font-bold text-black">$0.30</span>
               <span className="font-sans text-sm text-gray-400 ml-1">per pod</span>
             </div>
 
@@ -162,7 +162,7 @@ export default function PricingPage() {
               <input
                 type="range"
                 min="6"
-                max="150"
+                max="120"
                 step="5"
                 value={proPods}
                 onChange={handleSliderChange}
@@ -170,7 +170,7 @@ export default function PricingPage() {
               />
               <div className="flex justify-between mt-2">
                 <span className="font-sans text-[11px] text-gray-400">6 pods</span>
-                <span className="font-sans text-[11px] text-gray-400">150+ pods</span>
+                <span className="font-sans text-[11px] text-gray-400">120+ pods</span>
               </div>
             </div>
 
@@ -178,15 +178,15 @@ export default function PricingPage() {
             <div className="grid grid-cols-3 gap-2 mb-6">
               <div className="rounded-lg border border-gray-100 px-3 py-2 text-center">
                 <p className="font-sans text-xs font-semibold text-black">6–30</p>
-                <p className="font-sans text-[11px] text-gray-500">$0.15/pod</p>
+                <p className="font-sans text-[11px] text-gray-500">$0.17/pod</p>
               </div>
               <div className="rounded-lg border border-gray-100 px-3 py-2 text-center">
-                <p className="font-sans text-xs font-semibold text-black">35–70</p>
-                <p className="font-sans text-[11px] text-gray-500">$0.12/pod</p>
+                <p className="font-sans text-xs font-semibold text-black">35–75</p>
+                <p className="font-sans text-[11px] text-gray-500">$0.14/pod</p>
               </div>
               <div className="rounded-lg border border-gray-100 px-3 py-2 text-center">
-                <p className="font-sans text-xs font-semibold text-black">75–150+</p>
-                <p className="font-sans text-[11px] text-gray-500">$0.09/pod</p>
+                <p className="font-sans text-xs font-semibold text-black">80–120+</p>
+                <p className="font-sans text-[11px] text-gray-500">$0.11/pod</p>
               </div>
             </div>
 
