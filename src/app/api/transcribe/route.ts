@@ -955,10 +955,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       });
       console.log("🎉 [Pipeline Sync Complete] Teable write confirmed!");
 
-      if (!isAuthenticated) {
-        incrementDailyUsage(ip);
-        console.log(`[DailyLimit] Incremented for IP ${ip}`);
-      } else if (session?.user?.email) {
+      if (session?.user?.email) {
         /* Track usage for authenticated users */
         try {
           await addTranscription(session.user.email, {
