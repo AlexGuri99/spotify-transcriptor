@@ -58,13 +58,20 @@ async function findRecordByEmail(tableId: string, email: string): Promise<{ id: 
 
   const url = `${baseUrl}/api/table/${tableId}/record?filter=${encodeURIComponent(filter)}&take=1&fieldKeyType=name`;
 
+  console.log("[findRecordByEmail] URL:", url);
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" },
     signal: AbortSignal.timeout(8_000),
   });
 
-  if (!res.ok) return null;
+  console.log("[findRecordByEmail] Response status:", res.status);
+  if (!res.ok) {
+    const body = await res.text();
+    console.log("[findRecordByEmail] Error body:", body);
+    return null;
+  }
   const data: any = await res.json();
+  console.log("[findRecordByEmail] Records found:", data?.records?.length ?? 0);
   return data?.records?.[0] ?? null;
 }
 
@@ -224,8 +231,13 @@ export async function deleteUser(email: string): Promise<boolean> {
   const { baseUrl, apiKey } = requireConfig();
   if (!TEABLE_USERS_TABLE_ID) throw new Error("TEABLE_USERS_TABLE_ID not set");
 
+  console.log("[deleteUser] Looking up:", email);
   const userRecord = await findRecordByEmail(TEABLE_USERS_TABLE_ID, email);
-  if (!userRecord) return false;
+  if (!userRecord) {
+    console.log("[deleteUser] User NOT found in Teable");
+    return false;
+  }
+  console.log("[deleteUser] Found record ID:", userRecord.id);
 
   // Delete all transcripts for this user
   await deleteTranscriptsForUser(email);
