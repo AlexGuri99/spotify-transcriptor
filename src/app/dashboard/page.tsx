@@ -43,6 +43,7 @@ interface TranscriptionRecord {
   spotifyUrl: string;
   timestamp: string;
   executionTime: number;
+  thumbnailUrl?: string;
 }
 
 interface CachedEpisodeData {
@@ -226,6 +227,8 @@ function WorkspaceTab({ email: _email }: { email: string }) {
   const [viewingEpisode, setViewingEpisode] = useState<string | null>(null);
   const [viewingTranscript, setViewingTranscript] = useState<CachedEpisodeData | null>(null);
   const [viewingLoading, setViewingLoading] = useState(false);
+  const [showViewerTimestamps, setShowViewerTimestamps] = useState(true);
+  const [thumbnails, setThumbnails] = useState<Record<string, string>>({});
 
   const transcriptRef = useRef<HTMLDivElement>(null);
   const pollingRef = useRef<number | null>(null);
@@ -237,8 +240,13 @@ function WorkspaceTab({ email: _email }: { email: string }) {
     ])
       .then(([statsData, historyData]) => {
         setStats(statsData);
-        setHistory(historyData.history || []);
+        const items = historyData.history || [];
+        setHistory(items);
         setLoading(false);
+        /* Fetch thumbnails for all history items */
+        items.forEach((item: TranscriptionRecord) => {
+          fetchThumbnail(item.id, item.spotifyUrl);
+        });
       })
       .catch(() => setLoading(false));
   }, []);
@@ -266,6 +274,18 @@ function WorkspaceTab({ email: _email }: { email: string }) {
     } finally {
       setViewingLoading(false);
     }
+  }
+
+  /* -------- Fetch thumbnail for a history item -------- */
+  async function fetchThumbnail(episodeId: string, spotifyUrl: string) {
+    if (thumbnails[episodeId]) return;
+    try {
+      const res = await fetch(`/api/oembed?url=${encodeURIComponent(spotifyUrl)}`);
+      const data = await res.json();
+      if (data.thumbnailUrl) {
+        setThumbnails((prev) => ({ ...prev, [episodeId]: data.thumbnailUrl }));
+      }
+    } catch {}
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -345,7 +365,11 @@ function WorkspaceTab({ email: _email }: { email: string }) {
                 fetch("/api/dashboard/history").then((r) => r.json()),
               ]).then(([s, h]) => {
                 setStats(s);
-                setHistory(h.history || []);
+                const items = h.history || [];
+                setHistory(items);
+                items.forEach((item: TranscriptionRecord) => {
+                  fetchThumbnail(item.id, item.spotifyUrl);
+                });
               });
             } else if (parsed.type === "error") {
               gotResult = true;
@@ -575,7 +599,14 @@ function WorkspaceTab({ email: _email }: { email: string }) {
                 key={item.id + item.timestamp}
                 className="rounded-2xl border border-gray-200 bg-white p-5 shadow-[0_4px_24px_rgba(0,0,0,0.01)] hover:border-gray-300 transition-all"
               >
-                <div className="flex items-start justify-between gap-4">
+                <div className="flex items-start gap-4">
+                  {thumbnails[item.id] && (
+                    <img
+                      src={thumbnails[item.id]}
+                      alt=""
+                      className="h-14 w-14 rounded-lg object-cover shrink-0 mt-0.5"
+                    />
+                  )}
                   <div className="min-w-0 flex-1">
                     <h3 className="font-sans font-bold text-black truncate">{item.episodeTitle}</h3>
                     <div className="flex items-center gap-3 mt-2">
@@ -586,7 +617,7 @@ function WorkspaceTab({ email: _email }: { email: string }) {
                       <span className="font-sans text-xs text-gray-400">{item.executionTime.toFixed(1)}s</span>
                                           </div>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 shrink-0">
                     <button
                       onClick={() => openTranscript(item.id)}
                       className="font-sans shrink-0 rounded-xl border border-gray-200 p-2.5 text-gray-400 hover:border-black hover:text-black transition-all cursor-pointer"
@@ -624,12 +655,46 @@ function WorkspaceTab({ email: _email }: { email: string }) {
             <h3 className="font-sans font-bold text-black truncate pr-4">
               {viewingLoading ? "Loading..." : viewingTranscript?.title ?? "Transcript"}
             </h3>
-            <button
-              onClick={() => setViewingEpisode(null)}
-              className="rounded-xl border border-gray-200 p-1.5 text-gray-400 hover:border-black hover:text-black transition-all shrink-0 cursor-pointer"
-            >
-              <X className="h-4 w-4" />
-            </button>
+            <div className="flex items-center gap-2 shrink-0">
+              {viewingTranscript && (
+                <>
+                  <button
+                    onClick={() => setShowViewerTimestamps((v) => !v)}
+                    className={`font-sans rounded-xl border px-3 py-1.5 text-xs font-medium transition-all cursor-pointer ${
+                      showViewerTimestamps
+                        ? "border-black text-black"
+                        : "border-gray-200 text-gray-400 hover:border-black hover:text-black"
+                    }`}
+                    title="Toggle timestamps"
+                  >
+                    Timestamps
+                  </button>
+                  <button
+                    onClick={() => {
+                      const text = viewingTranscript.segments
+                        .map((s) => `[${formatTime(s.start)}] ${s.text}`)
+                        .join("\n\n");
+                      const blob = new Blob([text], { type: "text/plain" });
+                      const a = document.createElement("a");
+                      a.href = URL.createObjectURL(blob);
+                      a.download = `${viewingTranscript.title.replace(/[^a-zA-Z0-9]/g, "_")}.txt`;
+                      a.click();
+                      URL.revokeObjectURL(a.href);
+                    }}
+                    className="font-sans rounded-xl border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-400 hover:border-black hover:text-black transition-all cursor-pointer"
+                    title="Download as text file"
+                  >
+                    Download TXT
+                  </button>
+                </>
+              )}
+              <button
+                onClick={() => setViewingEpisode(null)}
+                className="rounded-xl border border-gray-200 p-1.5 text-gray-400 hover:border-black hover:text-black transition-all cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
           </div>
 
           {/* Body */}
@@ -642,9 +707,11 @@ function WorkspaceTab({ email: _email }: { email: string }) {
               <div className="space-y-3">
                 {viewingTranscript.segments.map((seg, i) => (
                   <div key={segmentKey(seg, i)} className="flex gap-3">
-                    <span className="font-mono text-xs text-gray-400 mt-0.5 shrink-0 w-14 text-right tabular-nums">
-                      {formatTime(seg.start)}
-                    </span>
+                    {showViewerTimestamps && (
+                      <span className="font-mono text-xs text-gray-400 mt-0.5 shrink-0 w-14 text-right tabular-nums">
+                        {formatTime(seg.start)}
+                      </span>
+                    )}
                     <p className="font-sans text-sm text-gray-700 leading-relaxed">
                       {seg.text}
                     </p>
