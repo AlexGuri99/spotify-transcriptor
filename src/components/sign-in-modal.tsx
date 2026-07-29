@@ -123,7 +123,7 @@ export default function SignInModal({ open, onClose, defaultMode = "signin", onS
         </div>
         {mode === "signup" && (
           <p className="font-sans text-sm text-gray-500 mb-6 leading-relaxed">
-            No credit card needed. You get <strong>15 free transcriptions</strong> every month.
+            No credit card needed. You get <strong>5 free transcriptions</strong> every month.
           </p>
         )}
 

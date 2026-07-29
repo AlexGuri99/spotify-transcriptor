@@ -657,7 +657,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       {
         type: "sign_up_required",
         error: "Sign up for free to transcribe this episode.",
-        detail: "No credit card needed. You get 15 free transcriptions every month.",
+        detail: "No credit card needed. You get 5 free transcriptions every month.",
       },
       { status: 401 }
     );

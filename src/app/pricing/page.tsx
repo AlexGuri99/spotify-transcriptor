@@ -29,7 +29,7 @@ function getProTier(pods: number): { pricePerPod: number; label: string } {
 export default function PricingPage() {
   const { data: session } = useSession();
   const [showSignIn, setShowSignIn] = useState(false);
-  const [proPods, setProPods] = useState(30);
+  const [proPods, setProPods] = useState(10);
   const tier = getProTier(proPods);
   const proTotal = (proPods * tier.pricePerPod).toFixed(2);
 
@@ -37,7 +37,7 @@ export default function PricingPage() {
   function handleSliderChange(e: React.ChangeEvent<HTMLInputElement>) {
     const raw = Number(e.target.value);
     let snapped = Math.round(raw / 5) * 5;
-    if (snapped < 16) snapped = 16;
+    if (snapped < 6) snapped = 6;
     setProPods(snapped);
   }
 
@@ -94,7 +94,7 @@ export default function PricingPage() {
             </div>
 
             <p className="font-sans text-sm text-gray-500 mb-6 leading-relaxed">
-              15 free transcriptions every month. No daily limit, no credit card needed.
+              5 free transcriptions every month. No daily limit, no credit card needed.
             </p>
 
             
@@ -161,7 +161,7 @@ export default function PricingPage() {
             <div className="mb-6">
               <input
                 type="range"
-                min="16"
+                min="6"
                 max="150"
                 step="5"
                 value={proPods}
@@ -169,7 +169,7 @@ export default function PricingPage() {
                 className="w-full accent-black h-2 rounded-full appearance-none cursor-pointer bg-gray-200 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-black [&::-webkit-slider-thumb]:shadow-md"
               />
               <div className="flex justify-between mt-2">
-                <span className="font-sans text-[11px] text-gray-400">16 pods</span>
+                <span className="font-sans text-[11px] text-gray-400">6 pods</span>
                 <span className="font-sans text-[11px] text-gray-400">150+ pods</span>
               </div>
             </div>
@@ -177,7 +177,7 @@ export default function PricingPage() {
             {/* Tier indicators */}
             <div className="grid grid-cols-3 gap-2 mb-6">
               <div className="rounded-lg border border-gray-100 px-3 py-2 text-center">
-                <p className="font-sans text-xs font-semibold text-black">16–30</p>
+                <p className="font-sans text-xs font-semibold text-black">6–30</p>
                 <p className="font-sans text-[11px] text-gray-500">$0.15/pod</p>
               </div>
               <div className="rounded-lg border border-gray-100 px-3 py-2 text-center">

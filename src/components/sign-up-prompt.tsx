@@ -31,7 +31,7 @@ export default function SignUpPrompt({ open, onContinue, onDismiss }: SignUpProm
 
         <div className="bg-gray-50 rounded-2xl px-5 py-4 mb-7 mx-auto inline-block">
           <p className="font-sans text-sm text-gray-600">
-            <span className="font-semibold text-black">15 free transcriptions</span> every month.
+            <span className="font-semibold text-black">5 free transcriptions</span> every month.
             No credit card. No commitment.
           </p>
         </div>
