@@ -867,6 +867,14 @@ function SettingsTab({ email }: { email: string }) {
                 Buy more credits
               </Link>
             )}
+            {stats?.plan === "free" && (
+              <Link
+                href="/pricing"
+                className="font-sans inline-flex items-center gap-2 rounded-xl border border-gray-200 px-5 py-2.5 text-sm font-medium text-gray-700 hover:border-black hover:text-black transition-all"
+              >
+                Upgrade
+              </Link>
+            )}
           </div>
         </div>
       </div>
