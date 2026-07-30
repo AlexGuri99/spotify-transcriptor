@@ -67,6 +67,8 @@ export function verifyWebhookSignature(
     .createHmac("sha256", secret)
     .update(payload)
     .digest("hex");
+  // timingSafeEqual throws if buffers differ in length, so guard first
+  if (signature.length !== expected.length) return false;
   return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
 }
 
@@ -96,5 +98,20 @@ export async function getLicensesForEmail(
     }));
   } catch {
     return [];
+  }
+}
+
+/**
+ * Cancel a Whop license/subscription.
+ * Used when a user deletes their account so they aren't billed indefinitely.
+ */
+export async function cancelLicense(licenseId: string): Promise<boolean> {
+  try {
+    await whopFetch(`/licenses/${licenseId}/cancel`, { method: "POST" });
+    console.log(`[Whop] Cancelled license ${licenseId}`);
+    return true;
+  } catch (err) {
+    console.error(`[Whop] Failed to cancel license ${licenseId}:`, err);
+    return false;
   }
 }

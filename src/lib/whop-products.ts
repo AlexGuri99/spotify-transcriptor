@@ -23,7 +23,7 @@ export const PAYGO_PRODUCTS: PayGoProduct[] = [
   { price: 30, credits: 100, envVar: "WHOP_PRODUCT_PAYGO_30" },
 ];
 
-function getProTier(pods: number): number {
+export function getProTier(pods: number): number {
   if (pods <= 30) return 0.17;
   if (pods <= 75) return 0.14;
   return 0.11;
@@ -68,20 +68,25 @@ export function getCheckoutUrl(productId: string, email: string): string {
 }
 
 /** Given a Whop product ID, figure out what plan type it is. */
+const _productIdMap = new Map<string, { type: "paygo" | "pro"; pods?: number; credits?: number }>();
+
+function _buildProductIdMap(): void {
+  if (_productIdMap.size > 0) return;
+  for (const p of PAYGO_PRODUCTS) {
+    const id = process.env[p.envVar];
+    if (id) _productIdMap.set(id, { type: "paygo", credits: p.credits });
+  }
+  for (const p of PRO_PRODUCTS) {
+    const id = process.env[p.envVar];
+    if (id) _productIdMap.set(id, { type: "pro", pods: p.pods });
+  }
+}
+
 export function identifyProduct(productId: string): {
   type: "paygo" | "pro" | "unknown";
   pods?: number;
   credits?: number;
 } {
-  for (const p of PAYGO_PRODUCTS) {
-    if (process.env[p.envVar] === productId) {
-      return { type: "paygo", credits: p.credits };
-    }
-  }
-  for (const p of PRO_PRODUCTS) {
-    if (process.env[p.envVar] === productId) {
-      return { type: "pro", pods: p.pods };
-    }
-  }
-  return { type: "unknown" };
+  _buildProductIdMap();
+  return _productIdMap.get(productId) ?? { type: "unknown" };
 }

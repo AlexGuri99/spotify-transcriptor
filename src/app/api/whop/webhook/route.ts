@@ -1,6 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { identifyProduct } from "@/lib/whop-products";
+import { verifyWebhookSignature } from "@/lib/whop";
 import { setUserPlan, getUserData } from "@/lib/usage-tracker";
+
+/* ------------------------------------------------------------------ */
+/* Idempotency — deduplicate webhook events within a 5-minute window  */
+/* ------------------------------------------------------------------ */
+const PROCESSED_EVENT_IDS = new Set<string>();
+const IDEMPOTENCY_TTL_MS = 5 * 60 * 1000;
+
+function markProcessed(eventId: string) {
+  PROCESSED_EVENT_IDS.add(eventId);
+  setTimeout(() => PROCESSED_EVENT_IDS.delete(eventId), IDEMPOTENCY_TTL_MS);
+}
 
 /* ------------------------------------------------------------------ */
 /* Webhook handler                                                    */
@@ -19,14 +31,7 @@ export async function POST(req: NextRequest) {
   const signature = req.headers.get("x-whop-signature") ?? "";
   const rawBody = await req.text();
 
-  // HMAC-SHA256 verification
-  const crypto = require("crypto");
-  const expected = crypto
-    .createHmac("sha256", secret)
-    .update(rawBody)
-    .digest("hex");
-
-  if (signature !== expected) {
+  if (!verifyWebhookSignature(rawBody, signature, secret)) {
     console.error("[Whop Webhook] Invalid signature");
     return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
   }
@@ -48,6 +53,16 @@ export async function POST(req: NextRequest) {
   console.log(`[Whop Webhook] Event: ${eventType}`);
   console.log(`[Whop Webhook] Payload keys: ${Object.keys(payload).join(", ")}`);
   console.log(`[Whop Webhook] Data keys: ${Object.keys(eventData).join(", ")}`);
+
+  /* ---------------------------------------------------------------- */
+  /* Idempotency — skip if we've already processed this event         */
+  /* ---------------------------------------------------------------- */
+  const eventId = payload.id ?? eventData.id ?? "";
+  if (eventId && PROCESSED_EVENT_IDS.has(eventId)) {
+    console.log(`[Whop Webhook] ⏭️ Skipping duplicate event ${eventId} (${eventType})`);
+    return NextResponse.json({ ok: true, deduped: true });
+  }
+  if (eventId) markProcessed(eventId);
 
   /* ---------------------------------------------------------------- */
   /* Extract identifiers — Whop may nest them differently per event   */
@@ -96,15 +111,43 @@ export async function POST(req: NextRequest) {
         break;
 
       /* ------------------------------------------------------------ */
+      /* Payment failed — subscription renewal failure                */
+      /* ------------------------------------------------------------ */
+      case "payment.failed":
+        if (identified.type === "pro") {
+          console.log(
+            `[Whop Webhook] ⚠️ Payment failed for ${customerEmail} on Pro plan — subscription may lapse`
+          );
+          // Don't change plan immediately — Whop will retry payments.
+          // If all retries fail, Whop sends membership.deactivated.
+        }
+        break;
+
+      /* ------------------------------------------------------------ */
       /* Pro subscription events                                       */
       /* ------------------------------------------------------------ */
       case "membership.activated":
-      case "membership.cancel_at_period_end_changed":
         if (identified.type === "pro" && identified.pods) {
           await setUserPlan(customerEmail, "pro", identified.pods);
           console.log(`[Whop Webhook] ✅ ${eventType}: ${customerEmail} → Pro (${identified.pods} pods)`);
         }
         break;
+
+      case "membership.cancel_at_period_end_changed": {
+        // This fires when the user toggles cancel/uncancel.
+        // The event data includes cancel_at_period_end — true means they cancelled,
+        // false means they un-cancelled. Only set to Pro on un-cancel.
+        const cancelAtPeriodEnd = eventData.cancel_at_period_end ?? eventData.membership?.cancel_at_period_end;
+        if (cancelAtPeriodEnd === true) {
+          console.log(`[Whop Webhook] ${eventType}: ${customerEmail} cancelled (will lapse at period end) — no plan change`);
+        } else if (identified.type === "pro" && identified.pods) {
+          await setUserPlan(customerEmail, "pro", identified.pods);
+          console.log(`[Whop Webhook] ✅ ${eventType}: ${customerEmail} un-cancelled → Pro (${identified.pods} pods)`);
+        } else {
+          console.log(`[Whop Webhook] ℹ️ ${eventType}: ${customerEmail} — unknown product, no action`);
+        }
+        break;
+      }
 
       case "membership.deactivated":
         if (identified.type === "pro") {

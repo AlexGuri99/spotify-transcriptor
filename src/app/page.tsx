@@ -55,6 +55,7 @@ type Status =
   | { phase: "done" }
   | { phase: "error"; error: string; detail?: string }
   | { phase: "daily_limit"; error: string; detail?: string }
+  | { phase: "plan_limit"; error: string; detail?: string }
   | { phase: "sign_up_required"; error: string; detail?: string };
 
 /* ------------------------------------------------------------------ */
@@ -153,6 +154,8 @@ export default function HomePage() {
         if (countdownInterval) clearInterval(countdownInterval);
         if (errorType === "daily_limit") {
           setStatus({ phase: "daily_limit", error: errorMsg, detail: errorDetail });
+        } else if (errorType === "plan_limit") {
+          setStatus({ phase: "plan_limit", error: errorMsg, detail: errorDetail });
         } else if (errorType === "sign_up_required") {
           setStatus({ phase: "sign_up_required", error: errorMsg, detail: errorDetail });
           pendingUrlRef.current = trimmed;
@@ -293,7 +296,43 @@ export default function HomePage() {
         </div>
       </header>
 
-      {/* ---- Daily limit modal ---- */}
+      {/* ---- Plan limit modal (authenticated free user hit monthly cap) ---- */}
+      {status.phase === "plan_limit" && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm">
+          <div className="mx-4 w-full max-w-md rounded-2xl border border-gray-200 bg-white p-8 shadow-2xl">
+            <div className="text-center">
+              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-black/5">
+                <Videotape className="h-7 w-7 text-black" />
+              </div>
+              <h2 className="font-sans text-xl font-bold text-black">
+                Free limit reached
+              </h2>
+              <p className="font-sans mt-2 text-sm text-gray-500 leading-relaxed">
+                {status.error}
+              </p>
+              <p className="font-sans text-sm text-gray-500 leading-relaxed">
+                Upgrade to keep transcribing.
+              </p>
+              <div className="mt-6 flex flex-col gap-3">
+                <Link
+                  href="/pricing"
+                  className="font-sans rounded-xl bg-black px-6 py-3 text-sm font-medium text-white transition-all hover:bg-gray-900 shadow-sm text-center"
+                >
+                  View plans
+                </Link>
+                <button
+                  onClick={handleResetHome}
+                  className="font-sans rounded-xl border border-gray-200 px-6 py-3 text-sm font-medium text-gray-500 transition-all hover:border-black hover:text-black"
+                >
+                  Go back
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ---- Daily limit modal (legacy) ---- */}
       {status.phase === "daily_limit" && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm">
           <div className="mx-4 w-full max-w-md rounded-2xl border border-gray-200 bg-white p-8 shadow-2xl">
@@ -305,10 +344,10 @@ export default function HomePage() {
                 Free limit reached
               </h2>
               <p className="font-sans mt-2 text-sm text-gray-500 leading-relaxed">
-                You&apos;ve used all 3 free transcriptions for today.
+                You&apos;ve used all 5 free transcriptions for this month.
               </p>
               <p className="font-sans text-sm text-gray-500 leading-relaxed">
-                Sign in to keep transcribing with unlimited access.
+                Upgrade to keep transcribing or wait until your plan resets.
               </p>
               <div className="mt-6 flex flex-col gap-3">
                 <button

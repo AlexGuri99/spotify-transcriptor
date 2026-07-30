@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { Newsreader, Inter } from "next/font/google";
 import Link from "next/link";
 import SiteFooter from "@/components/site-footer";
+import { getProTier } from "@/lib/whop-products";
 import {
   Videotape,
   LogOut,
@@ -756,7 +757,7 @@ function SettingsTab({ email }: { email: string }) {
   }, []);
 
   const planName = stats?.plan === "free" ? "Free" : stats?.plan === "pro" ? "Pro" : "PayGo";
-  const planPrice = stats?.plan === "free" ? "$0 / month" : stats?.plan === "pro" ? `$${((stats.planLimit ?? 30) * 0.17).toFixed(2)} / month` : "Prepaid credits";
+  const planPrice = stats?.plan === "free" ? "$0 / month" : stats?.plan === "pro" ? `$${((stats.planLimit ?? 30) * getProTier(stats.planLimit ?? 30)).toFixed(2)} / month` : "Prepaid credits";
   const creditsInfo = stats?.plan === "credits" ? `${stats.creditsRemaining} credits remaining` : null;
 
   async function handleChangePassword(e: FormEvent) {
@@ -846,17 +847,27 @@ function SettingsTab({ email }: { email: string }) {
         <h3 className="font-sans font-bold text-black mb-4">Billing</h3>
         <div className="p-6 rounded-xl bg-gray-50 border border-gray-100">
           <p className="font-sans text-sm text-gray-600 leading-relaxed">
-            Payments are processed securely through Whop. To manage your subscription, purchase credits, or view your billing history, visit the Whop dashboard.
+            Payments are processed securely through Whop. To manage your subscription, view your billing history, or cancel, visit the Whop dashboard.
           </p>
-          <a
-            href="https://whop.com/dashboard"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="font-sans inline-flex items-center gap-2 mt-4 rounded-xl bg-black px-5 py-2.5 text-sm font-medium text-white hover:bg-gray-900 transition-all"
-          >
-            Manage Billing
-            <ExternalLink className="h-3.5 w-3.5" />
-          </a>
+          <div className="flex flex-wrap items-center gap-3 mt-4">
+            <a
+              href="https://whop.com/dashboard"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-sans inline-flex items-center gap-2 rounded-xl bg-black px-5 py-2.5 text-sm font-medium text-white hover:bg-gray-900 transition-all"
+            >
+              Manage Billing
+              <ExternalLink className="h-3.5 w-3.5" />
+            </a>
+            {stats?.plan === "credits" && (
+              <Link
+                href="/pricing"
+                className="font-sans inline-flex items-center gap-2 rounded-xl border border-gray-200 px-5 py-2.5 text-sm font-medium text-gray-700 hover:border-black hover:text-black transition-all"
+              >
+                Buy more credits
+              </Link>
+            )}
+          </div>
         </div>
       </div>
 
