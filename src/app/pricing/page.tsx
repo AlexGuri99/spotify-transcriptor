@@ -5,6 +5,7 @@ import { Newsreader, Inter } from "next/font/google";
 import { Videotape, Sparkles, Zap, Sliders } from "lucide-react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
+import { getCheckoutUrl } from "@/lib/whop-products";
 import SignInModal from "@/components/sign-in-modal";
 import SiteFooter from "@/components/site-footer";
 
@@ -74,7 +75,7 @@ export default function PricingPage() {
       return;
     }
     setPurchaseLabel(label);
-    const url = `https://whop.com/checkout/${productId}/?email=${encodeURIComponent(session.user.email)}`;
+    const url = getCheckoutUrl(productId, session.user.email);
     window.open(url, "_blank", "noopener,noreferrer");
     setTimeout(() => setPurchaseLabel(null), 3000);
   }
