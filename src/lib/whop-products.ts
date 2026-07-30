@@ -64,7 +64,7 @@ export function getProProductId(pods: number): string | null {
 
 /** Get the Whop checkout URL for a given product ID. */
 export function getCheckoutUrl(productId: string, email: string): string {
-  const domain = process.env.WHOP_SANDBOX === "true" ? "sandbox.whop.com" : "whop.com";
+  const domain = process.env.NEXT_PUBLIC_WHOP_SANDBOX === "true" ? "sandbox.whop.com" : "whop.com";
   return `https://${domain}/checkout/${productId}/?email=${encodeURIComponent(email)}`;
 }
 
