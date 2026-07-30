@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Newsreader, Inter } from "next/font/google";
 import { Videotape, Sparkles, Zap, Sliders } from "lucide-react";
 import Link from "next/link";
@@ -20,24 +20,6 @@ const transcriptSans = Inter({
   variable: "--font-transcript-sans",
 });
 
-interface PayGoProduct {
-  productId: string;
-  price: number;
-  credits: number;
-}
-
-interface ProProduct {
-  productId: string;
-  pods: number;
-  pricePerPod: number;
-  monthlyPrice: number;
-}
-
-interface ProductsData {
-  paygo: PayGoProduct[];
-  pro: ProProduct[];
-}
-
 function getProTier(pods: number): { pricePerPod: number; label: string } {
   if (pods <= 30) return { pricePerPod: 0.17, label: "$0.17 / pod" };
   if (pods <= 75) return { pricePerPod: 0.14, label: "$0.14 / pod" };
@@ -48,15 +30,6 @@ export default function PricingPage() {
   const { data: session } = useSession();
   const [showSignIn, setShowSignIn] = useState(false);
   const [proPods, setProPods] = useState(10);
-  const [products, setProducts] = useState<ProductsData | null>(null);
-  const [purchaseLabel, setPurchaseLabel] = useState<string | null>(null);
-
-  useEffect(() => {
-    fetch("/api/whop/products")
-      .then((r) => r.json())
-      .then(setProducts)
-      .catch(() => {});
-  }, []);
 
   const tier = getProTier(proPods);
   const proTotal = (proPods * tier.pricePerPod).toFixed(2);
@@ -66,21 +39,6 @@ export default function PricingPage() {
     let snapped = Math.round(raw / 5) * 5;
     if (snapped < 6) snapped = 6;
     setProPods(snapped);
-  }
-
-  function handlePurchase(productId: string, label: string) {
-    if (!session?.user?.email) {
-      setShowSignIn(true);
-      return;
-    }
-    setPurchaseLabel(label);
-    const url = `https://whop.com/checkout/${productId}/?email=${encodeURIComponent(session.user.email)}`;
-    window.open(url, "_blank", "noopener,noreferrer");
-    setTimeout(() => setPurchaseLabel(null), 3000);
-  }
-
-  function handleSignedIn() {
-    setShowSignIn(false);
   }
 
   return (
@@ -147,8 +105,8 @@ export default function PricingPage() {
             </Link>
           </div>
 
-          {/* PayGo — Pay-As-You-Go */}
-          <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-[0_4px_24px_rgba(0,0,0,0.01)] flex flex-col hover:border-gray-300 transition-all">
+          {/* PayGo — Pay-As-You-Go (Coming Soon) */}
+          <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-[0_4px_24px_rgba(0,0,0,0.01)] flex flex-col opacity-50 select-none">
             <div className="flex items-center gap-3 mb-4">
               <div className="rounded-xl bg-black/5 p-2.5">
                 <Zap className="h-5 w-5 text-black" />
@@ -168,37 +126,15 @@ export default function PricingPage() {
               For users who transcribe sporadically and don&apos;t want a monthly commitment.
             </p>
 
-            {/* PayGo tier options */}
-            <div className="space-y-2 mb-6">
-              {products?.paygo.map((p) => (
-                <div key={p.credits} className="flex items-center justify-between rounded-lg border border-gray-100 px-4 py-3">
-                  <div>
-                    <span className="font-sans text-sm font-semibold text-black">${p.price}</span>
-                    <span className="font-sans text-xs text-gray-400 ml-1">({p.credits} pods)</span>
-                  </div>
-                  <button
-                    onClick={() => handlePurchase(p.productId, `paygo-${p.credits}`)}
-                    disabled={purchaseLabel === `paygo-${p.credits}`}
-                    className="font-sans rounded-lg bg-black px-4 py-1.5 text-xs font-medium text-white hover:bg-gray-900 transition-all disabled:opacity-50 cursor-pointer"
-                  >
-                    {purchaseLabel === `paygo-${p.credits}` ? "Opening..." : "Buy"}
-                  </button>
-                </div>
-              ))}
-              {!products && (
-                <div className="flex items-center justify-center py-4">
-                  <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-black" />
-                </div>
-              )}
+            <div className="mt-auto">
+              <span className="font-sans block w-full text-center rounded-xl bg-gray-200 px-6 py-3 text-sm font-medium text-gray-400">
+                Coming soon
+              </span>
             </div>
-
-            <p className="font-sans text-xs text-gray-400 mt-auto text-center">
-              One-time purchase. Credits never expire.
-            </p>
           </div>
 
-          {/* Pro — Monthly Subscription */}
-          <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-[0_4px_24px_rgba(0,0,0,0.01)] flex flex-col hover:border-gray-300 transition-all">
+          {/* Pro — Monthly Subscription (Coming Soon) */}
+          <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-[0_4px_24px_rgba(0,0,0,0.01)] flex flex-col opacity-50 select-none">
             <div className="flex items-center gap-3 mb-4">
               <div className="rounded-xl bg-black/5 p-2.5">
                 <Sliders className="h-5 w-5 text-black" />
@@ -257,26 +193,11 @@ export default function PricingPage() {
               For power users, researchers, and teams who transcribe at scale.
             </p>
 
-            {/* Subscribe button */}
+            {/* Coming soon */}
             <div className="mt-auto">
-              {(() => {
-                const proProduct = products?.pro.find((p) => p.pods === proPods);
-                const productId = proProduct?.productId;
-                const label = `pro-${proPods}`;
-                return (
-                  <button
-                    onClick={() => productId && handlePurchase(productId, label)}
-                    disabled={!productId || purchaseLabel === label}
-                    className="font-sans w-full rounded-xl bg-black px-6 py-3 text-sm font-medium text-white hover:bg-gray-900 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-                  >
-                    {purchaseLabel === label
-                      ? "Opening Whop..."
-                      : productId
-                        ? `Subscribe — $${proTotal}/month`
-                        : "Loading..."}
-                  </button>
-                );
-              })()}
+              <span className="font-sans block w-full text-center rounded-xl bg-gray-200 px-6 py-3 text-sm font-medium text-gray-400">
+                Coming soon
+              </span>
             </div>
           </div>
         </div>
@@ -293,7 +214,7 @@ export default function PricingPage() {
 
       <SiteFooter />
 
-      <SignInModal open={showSignIn} onClose={() => setShowSignIn(false)} onSignedIn={handleSignedIn} />
+      <SignInModal open={showSignIn} onClose={() => setShowSignIn(false)} onSignedIn={() => setShowSignIn(false)} />
     </div>
   );
 }
