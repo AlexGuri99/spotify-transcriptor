@@ -5,7 +5,6 @@ import { Newsreader, Inter } from "next/font/google";
 import { Videotape, Sparkles, Zap, Sliders } from "lucide-react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
-import { getCheckoutUrl } from "@/lib/whop-products";
 import SignInModal from "@/components/sign-in-modal";
 import SiteFooter from "@/components/site-footer";
 
@@ -22,13 +21,13 @@ const transcriptSans = Inter({
 });
 
 interface PayGoProduct {
-  productId: string;
+  variantId: string;
   price: number;
   credits: number;
 }
 
 interface ProProduct {
-  productId: string;
+  variantId: string;
   pods: number;
   pricePerPod: number;
   monthlyPrice: number;
@@ -53,7 +52,7 @@ export default function PricingPage() {
   const [purchaseLabel, setPurchaseLabel] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/api/whop/products")
+    fetch("/api/lemon/products")
       .then((r) => r.json())
       .then(setProducts)
       .catch(() => {});
@@ -69,14 +68,25 @@ export default function PricingPage() {
     setProPods(snapped);
   }
 
-  function handlePurchase(productId: string, label: string) {
+  async function handlePurchase(variantId: string, label: string) {
     if (!session?.user?.email) {
       setShowSignIn(true);
       return;
     }
     setPurchaseLabel(label);
-    const url = getCheckoutUrl(productId, session.user.email);
-    window.open(url, "_blank", "noopener,noreferrer");
+    try {
+      const res = await fetch("/api/lemon/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ variantId, email: session.user.email }),
+      });
+      const data = await res.json();
+      if (data.url) {
+        window.open(data.url, "_blank", "noopener,noreferrer");
+      }
+    } catch (err) {
+      console.error("Checkout error:", err);
+    }
     setTimeout(() => setPurchaseLabel(null), 3000);
   }
 
