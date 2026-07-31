@@ -36,6 +36,10 @@ const TEABLE_API_KEY: string | undefined = process.env.TEABLE_API_KEY;
 const TEABLE_USERS_TABLE_ID: string | undefined = process.env.TEABLE_USERS_TABLE_ID;
 const TEABLE_TRANSCRIPTS_TABLE_ID: string | undefined = process.env.TEABLE_TABLE_ID;
 
+function todayISO(): string {
+  return new Date().toISOString().split("T")[0];
+}
+
 function requireConfig() {
   if (!TEABLE_BASE_URL || !TEABLE_API_KEY) {
     throw new Error("Teable is not configured. Set TEABLE_BASE_URL and TEABLE_API_KEY.");
@@ -168,6 +172,7 @@ export async function getUserData(email: string): Promise<UserData> {
     plan: "free",
     creditsRemaining: 0,
     provider: "",
+    timestamp: todayISO(),
   };
   await createRecord(TEABLE_USERS_TABLE_ID, fields);
 
@@ -188,13 +193,14 @@ export async function upsertUser(email: string, provider: "credentials" | "googl
   const existing = await findRecordByEmail(TEABLE_USERS_TABLE_ID, normalizedEmail);
 
   if (existing) {
-    await updateRecord(TEABLE_USERS_TABLE_ID, existing.id, { provider });
+    await updateRecord(TEABLE_USERS_TABLE_ID, existing.id, { provider, timestamp: todayISO() });
   } else {
     await createRecord(TEABLE_USERS_TABLE_ID, {
       email: normalizedEmail,
       plan: "free",
       creditsRemaining: 0,
       provider,
+      timestamp: todayISO(),
     });
   }
 }
