@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { Newsreader, Inter } from "next/font/google";
 import { Videotape, Sparkles, Zap, Sliders } from "lucide-react";
 import Link from "next/link";
@@ -50,19 +50,12 @@ export default function PricingPage() {
   const [proPods, setProPods] = useState(10);
   const [products, setProducts] = useState<ProductsData | null>(null);
   const [purchaseLabel, setPurchaseLabel] = useState<string | null>(null);
-  const lemonLoadedRef = useRef(false);
 
-  // Pre-load Lemon Squeezy checkout overlay script on mount
   useEffect(() => {
     fetch("/api/lemon/products")
       .then((r) => r.json())
       .then(setProducts)
       .catch(() => {});
-    const script = document.createElement("script");
-    script.src = "https://app.lemonsqueezy.com/js/checkout.js";
-    script.async = true;
-    script.onload = () => { lemonLoadedRef.current = true; };
-    document.head.appendChild(script);
   }, []);
 
   const tier = getProTier(proPods);
@@ -89,19 +82,7 @@ export default function PricingPage() {
       });
       const data = await res.json();
       if (data.url) {
-        // If script hasn't loaded yet, open in new tab as fallback
-        if (!lemonLoadedRef.current) {
-          window.open(data.url, "_blank", "noopener,noreferrer");
-        } else {
-          // Open checkout in overlay via a class-based link
-          const link = document.createElement("a");
-          link.href = data.url;
-          link.className = "lemonsqueezy-button";
-          link.style.display = "none";
-          document.body.appendChild(link);
-          link.click();
-          link.remove();
-        }
+        window.open(data.url, "_blank", "noopener,noreferrer");
       }
     } catch (err) {
       console.error("Checkout error:", err);
@@ -177,7 +158,10 @@ export default function PricingPage() {
           </div>
 
           {/* PayGo — Pay-As-You-Go */}
-          <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-[0_4px_24px_rgba(0,0,0,0.01)] flex flex-col hover:border-gray-300 transition-all">
+          <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-[0_4px_24px_rgba(0,0,0,0.01)] flex flex-col opacity-50 select-none relative">
+            <div className="absolute top-3 right-3 font-sans text-[10px] font-semibold uppercase tracking-wider text-gray-400 border border-gray-200 rounded-full px-2.5 py-0.5">
+              Coming Soon
+            </div>
             <div className="flex items-center gap-3 mb-4">
               <div className="rounded-xl bg-black/5 p-2.5">
                 <Zap className="h-5 w-5 text-black" />
@@ -206,11 +190,10 @@ export default function PricingPage() {
                     <span className="font-sans text-xs text-gray-400 ml-1">({p.credits} pods)</span>
                   </div>
                   <button
-                    onClick={() => handlePurchase(p.variantId, `paygo-${p.credits}`)}
-                    disabled={purchaseLabel === `paygo-${p.credits}`}
-                    className="font-sans rounded-lg bg-black px-4 py-1.5 text-xs font-medium text-white hover:bg-gray-900 transition-all disabled:opacity-50 cursor-pointer"
+                    disabled
+                    className="font-sans rounded-lg bg-gray-300 px-4 py-1.5 text-xs font-medium text-white cursor-not-allowed"
                   >
-                    {purchaseLabel === `paygo-${p.credits}` ? "Opening..." : "Buy"}
+                    Coming Soon
                   </button>
                 </div>
               ))}
@@ -227,7 +210,10 @@ export default function PricingPage() {
           </div>
 
           {/* Pro — Monthly Subscription */}
-          <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-[0_4px_24px_rgba(0,0,0,0.01)] flex flex-col hover:border-gray-300 transition-all">
+          <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-[0_4px_24px_rgba(0,0,0,0.01)] flex flex-col opacity-50 select-none relative">
+            <div className="absolute top-3 right-3 font-sans text-[10px] font-semibold uppercase tracking-wider text-gray-400 border border-gray-200 rounded-full px-2.5 py-0.5">
+              Coming Soon
+            </div>
             <div className="flex items-center gap-3 mb-4">
               <div className="rounded-xl bg-black/5 p-2.5">
                 <Sliders className="h-5 w-5 text-black" />
@@ -258,7 +244,7 @@ export default function PricingPage() {
                 step="5"
                 value={proPods}
                 onChange={handleSliderChange}
-                className="w-full accent-black h-2 rounded-full appearance-none cursor-pointer bg-gray-200 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-black [&::-webkit-slider-thumb]:shadow-md"
+                className="w-full accent-black h-2 rounded-full appearance-none cursor-pointer bg-gray-200 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-black [&::-webkit-slider-thumb]:shadow-md pointer-events-none"
               />
               <div className="flex justify-between mt-2">
                 <span className="font-sans text-[11px] text-gray-400">6 pods</span>
@@ -288,24 +274,12 @@ export default function PricingPage() {
 
             {/* Subscribe button */}
             <div className="mt-auto">
-              {(() => {
-                const proProduct = products?.pro.find((p) => p.pods === proPods);
-                const variantId = proProduct?.variantId;
-                const label = `pro-${proPods}`;
-                return (
-                  <button
-                    onClick={() => variantId && handlePurchase(variantId, label)}
-                    disabled={!variantId || purchaseLabel === label}
-                    className="font-sans w-full rounded-xl bg-black px-6 py-3 text-sm font-medium text-white hover:bg-gray-900 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-                  >
-                    {purchaseLabel === label
-                      ? "Opening Lemon Squeezy..."
-                      : variantId
-                        ? `Subscribe — $${proTotal}/month`
-                        : "Coming Soon"}
-                  </button>
-                );
-              })()}
+              <button
+                disabled
+                className="font-sans w-full rounded-xl bg-gray-300 px-6 py-3 text-sm font-medium text-white cursor-not-allowed"
+              >
+                Coming Soon
+              </button>
             </div>
           </div>
         </div>
