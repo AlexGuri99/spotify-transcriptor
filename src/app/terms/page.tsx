@@ -37,7 +37,6 @@ export default function TermsPage() {
           <nav className="font-sans text-sm font-medium text-gray-500 flex items-center gap-8">
             <Link href="/features" className="hover:text-black transition-colors">Product</Link>
             <Link href="/pricing" className="hover:text-black transition-colors">Pricing</Link>
-            <span className="cursor-not-allowed opacity-40">Docs</span>
             {session?.user ? (
               <Link href="/dashboard" className="font-sans text-sm font-medium text-white bg-black rounded-full px-4 py-1.5 hover:bg-gray-900 transition-colors">Dashboard</Link>
             ) : (
@@ -118,7 +117,7 @@ export default function TermsPage() {
           <section>
             <h2 className="font-bold text-black text-lg mb-2">9. Contact</h2>
             <p>
-              For questions about these Terms, please contact us at support@tranzkript.com.
+              For questions about these Terms, please contact us at <a href="mailto:support@tranzkript.com" className="underline hover:text-black transition-colors">support@tranzkript.com</a>.
             </p>
           </section>
         </div>

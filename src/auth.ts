@@ -1,6 +1,5 @@
 import type { NextAuthOptions } from "next-auth";
 import Google from "next-auth/providers/google";
-import Github from "next-auth/providers/github";
 import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcrypt";
 import { getPasswordHash, upsertUser } from "@/lib/usage-tracker";
@@ -34,10 +33,6 @@ export const authOptions: NextAuthOptions = {
       clientId: process.env.AUTH_GOOGLE_ID!,
       clientSecret: process.env.AUTH_GOOGLE_SECRET!,
     }),
-    Github({
-      clientId: process.env.AUTH_GITHUB_ID!,
-      clientSecret: process.env.AUTH_GITHUB_SECRET!,
-    }),
   ],
   secret: process.env.AUTH_SECRET,
   pages: {
@@ -49,7 +44,7 @@ export const authOptions: NextAuthOptions = {
         // OAuth sign-in — upsert user in Teable
         const email = user?.email || token.email;
         if (email) {
-          const provider = account.provider as "google" | "github";
+          const provider = account.provider as "google";
           await upsertUser(email, provider).catch(() => {});
         }
         token.id = account.providerAccountId;

@@ -185,7 +185,7 @@ export async function getUserData(email: string): Promise<UserData> {
 }
 
 /** Upsert user on OAuth sign-in (also used for credentials sign-up). */
-export async function upsertUser(email: string, provider: "credentials" | "google" | "github"): Promise<void> {
+export async function upsertUser(email: string, provider: "credentials" | "google"): Promise<void> {
   const { baseUrl, apiKey } = requireConfig();
   if (!TEABLE_USERS_TABLE_ID) throw new Error("TEABLE_USERS_TABLE_ID not set");
 

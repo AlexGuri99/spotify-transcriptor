@@ -5,7 +5,7 @@ export default function SiteFooter() {
     <footer className="border-t border-gray-100 bg-white px-8 py-5">
       <div className="mx-auto flex max-w-6xl flex-col items-center gap-2 sm:flex-row sm:justify-between">
         <p className="font-sans text-[11px] font-medium text-gray-400">
-          Not affiliated with Spotify Corporation
+          Talk to us - <a href="mailto:support@tranzkript.com" className="hover:text-black transition-colors">support@tranzkript.com</a>
         </p>
         <nav className="flex items-center gap-4">
           <Link
