@@ -26,8 +26,12 @@ const barlowCondensed = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "Tranzkript",
-  description: "Extract transcripts from Spotify podcast episodes",
+  title: {
+    default: "Tranzkript — Extract Transcripts from Spotify Podcast Episodes",
+    template: "%s — Tranzkript",
+  },
+  description:
+    "Convert any public Spotify podcast episode into a clean, readable transcript with timestamps. AI-powered ad removal, text export, and more. No sign-up required to get started.",
   icons: {
     icon: [
       {
@@ -35,6 +39,25 @@ export const metadata: Metadata = {
         type: "image/svg+xml",
       },
     ],
+  },
+  openGraph: {
+    title: "Tranzkript — Extract Transcripts from Spotify Podcast Episodes",
+    description:
+      "Convert any public Spotify podcast episode into a clean, readable transcript with timestamps. AI-powered ad removal, text export, and more.",
+    url: "https://www.tranzkript.com",
+    siteName: "Tranzkript",
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Tranzkript — Extract Transcripts from Spotify Podcast Episodes",
+    description:
+      "Convert any public Spotify podcast episode into a clean, readable transcript with timestamps.",
+  },
+  robots: {
+    index: true,
+    follow: true,
   },
 };
 
