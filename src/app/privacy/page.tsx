@@ -55,7 +55,13 @@ export default function PrivacyPage() {
         <div className="font-[family-name:var(--font-barlow-condensed)] text-sm text-gray-600 space-y-6 leading-relaxed">
           <section>
             <h2 className="font-bold text-black text-lg mb-2">1. Information We Collect</h2>
-            <p className="text-gray-400 italic">Coming soon.</p>
+            <p className="mb-2">We collect the following information:</p>
+            <ul className="list-disc pl-6 mt-2 space-y-1">
+              <li><strong>Account information</strong> — email address and hashed password if you register with email, or your name and email address if you sign in with Google.</li>
+              <li><strong>Transcription data</strong> — the podcast episode URLs you submit and the resulting transcripts.</li>
+              <li><strong>Usage data</strong> — transcription history, credit usage, and account activity.</li>
+              <li><strong>Session data</strong> — an essential session cookie to keep you logged in (NextAuth).</li>
+            </ul>
           </section>
 
           <section>
@@ -68,40 +74,78 @@ export default function PrivacyPage() {
               <li>Communicate with you about service updates or issues</li>
               <li>Prevent abuse and enforce our Terms of Service</li>
             </ul>
+            <p className="mt-3"><strong>Legal basis (GDPR):</strong> We process your data under the legal bases of contract necessity (to deliver the Service you requested) and legitimate interests (to maintain security and improve the Service). We do not rely on consent as a legal basis for processing.</p>
           </section>
 
           <section>
-            <h2 className="font-bold text-black text-lg mb-2">3. Data Storage</h2>
+            <h2 className="font-bold text-black text-lg mb-2">3. Data Storage &amp; Retention</h2>
             <p>
-              Your data is stored securely using third-party infrastructure (Teable database). We retain your transcription history and account information for as long as your account is active. You may request deletion of your data at any time by contacting us.
+              Your data is stored securely using third-party infrastructure (Teable database). We retain:
+            </p>
+            <ul className="list-disc pl-6 mt-2 space-y-1">
+              <li><strong>Account information</strong> — until you delete your account or request erasure</li>
+              <li><strong>Transcription history</strong> — until you delete your account or request erasure</li>
+              <li><strong>Usage logs</strong> — up to 12 months</li>
+            </ul>
+            <p className="mt-2">
+              You may request deletion of your data at any time by contacting us. Deletion requests are fulfilled within 30 days.
             </p>
           </section>
 
           <section>
             <h2 className="font-bold text-black text-lg mb-2">4. Data Sharing</h2>
             <p>
-              We do not sell your personal information. We may share data with third-party service providers who help us operate the Service (e.g., Teable for database hosting, OpenRouter for transcription processing). These providers are bound by data processing agreements and may not use your data for their own purposes.
+              We do not sell your personal information. We may share data with third-party service providers who help us operate the Service:
+            </p>
+            <ul className="list-disc pl-6 mt-2 space-y-1">
+              <li><strong>Teable</strong> — database hosting for account and transcription data</li>
+              <li><strong>OpenRouter</strong> — AI processing for transcription generation</li>
+              <li><strong>Lemon Squeezy / Whop</strong> — payment processing (no credit card data is stored by us)</li>
+            </ul>
+            <p className="mt-2">
+              These providers are bound by data processing agreements and may not use your data for their own purposes.
             </p>
           </section>
 
           <section>
             <h2 className="font-bold text-black text-lg mb-2">5. Third-Party Authentication</h2>
             <p>
-              If you choose to sign in with Google, those providers share your email address with us according to their own privacy policies. We do not receive or store your OAuth provider passwords.
+              If you choose to sign in with Google, Google shares your name and email address with us according to their own privacy policy. We do not receive or store your OAuth provider passwords.
             </p>
           </section>
 
           <section>
-            <h2 className="font-bold text-black text-lg mb-2">6. Your Rights</h2>
+            <h2 className="font-bold text-black text-lg mb-2">6. International Data Transfers</h2>
             <p>
-              Depending on your jurisdiction, you may have the right to access, correct, delete, or export your personal data. To exercise these rights, contact us at <a href="mailto:support@tranzkript.com" className="underline hover:text-black transition-colors">support@tranzkript.com</a>.
+              We use service providers (Teable, OpenRouter) that may process data outside your country of residence. When transferring data from the European Economic Area (EEA) to countries not deemed adequate by the European Commission, we rely on Standard Contractual Clauses or equivalent safeguards to ensure your data receives equivalent protection.
             </p>
           </section>
 
           <section>
-            <h2 className="font-bold text-black text-lg mb-2">7. Cookies</h2>
+            <h2 className="font-bold text-black text-lg mb-2">7. Your Rights</h2>
+            <p className="mb-2">
+              Depending on your jurisdiction, you may have the following rights:
+            </p>
+            <ul className="list-disc pl-6 mt-2 space-y-1">
+              <li><strong>Access</strong> — request a copy of the personal data we hold about you</li>
+              <li><strong>Correction</strong> — request that we correct inaccurate or incomplete data</li>
+              <li><strong>Deletion</strong> — request that we delete your personal data (subject to legal obligations)</li>
+              <li><strong>Data portability</strong> — request an export of your data in a machine-readable format (JSON)</li>
+              <li><strong>Withdraw consent</strong> — if processing is based on consent, you may withdraw it at any time</li>
+              <li><strong>Lodge a complaint</strong> — you may file a complaint with your local data protection authority (e.g., the ICO in the UK, CNIL in France, or your local equivalent)</li>
+            </ul>
+            <p className="mt-2">
+              <strong>CCPA (California residents):</strong> You have the right to know what personal information is collected, request deletion, and opt out of the sale of personal information. Tranzkript does not sell your personal information. You will not be discriminated against for exercising your CCPA rights.
+            </p>
+            <p className="mt-2">
+              To exercise any of these rights, contact us at <a href="mailto:support@tranzkript.com" className="underline hover:text-black transition-colors">support@tranzkript.com</a>.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="font-bold text-black text-lg mb-2">8. Cookies</h2>
             <p>
-              We use essential cookies for authentication (NextAuth session cookies). No tracking cookies or third-party analytics cookies are used at this time.
+              We use only essential cookies required for authentication (NextAuth session cookies). No tracking cookies, analytics cookies, or third-party advertising cookies are used. Since we use only essential cookies, no cookie consent banner is required under GDPR.
             </p>
           </section>
 
