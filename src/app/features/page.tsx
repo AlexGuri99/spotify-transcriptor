@@ -75,7 +75,7 @@ export default function FeaturesPage() {
             </span>
           </Link>
           <nav className="font-sans text-sm font-medium text-gray-500 flex items-center gap-8">
-            <Link href="/features" className="text-black">Product</Link>
+            <Link href="/features" className="text-black">Features</Link>
             <Link href="/pricing" className="hover:text-black transition-colors">Pricing</Link>
             {session?.user ? (
               <Link href="/dashboard" className="font-sans text-sm font-medium text-white bg-black rounded-full px-4 py-1.5 hover:bg-gray-900 transition-colors">Dashboard</Link>
@@ -99,7 +99,7 @@ export default function FeaturesPage() {
 
         <div className="mb-12">
           <p className="font-semibold tracking-wide text-black mb-6 text-center text-xl font-[family-name:var(--font-barlow-condensed)]">
-            Product
+            Features
           </p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {features.map((feature) => (

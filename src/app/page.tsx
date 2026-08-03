@@ -284,7 +284,7 @@ export default function HomePage() {
             </span>
           </button>
           <nav className="font-sans text-sm font-medium text-gray-500 flex items-center gap-8">
-            <Link href="/features" className="hover:text-black transition-colors">Product</Link>
+            <Link href="/features" className="hover:text-black transition-colors">Features</Link>
             <Link href="/pricing" className="hover:text-black transition-colors">Pricing</Link>
             {session?.user ? (
               <Link href="/dashboard" className="font-sans text-sm font-medium text-white bg-black rounded-full px-4 py-1.5 hover:bg-gray-900 transition-colors">Dashboard</Link>
