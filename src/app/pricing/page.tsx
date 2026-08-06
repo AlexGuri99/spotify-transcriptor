@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { Newsreader, Inter } from "next/font/google";
 import { Videotape, Sparkles, Zap, Sliders } from "lucide-react";
 import Link from "next/link";
@@ -34,6 +35,7 @@ interface ProProduct {
 }
 
 interface ProductsData {
+  mode: string;
   paygo: PayGoProduct[];
   pro: ProProduct[];
 }
@@ -44,19 +46,22 @@ function getProTier(pods: number): { pricePerPod: number; label: string } {
   return { pricePerPod: 0.11, label: "$0.11 / pod" };
 }
 
-export default function PricingPage() {
+function PricingContent() {
   const { data: session } = useSession();
+  const searchParams = useSearchParams();
+  const mode = searchParams.get("mode") === "test" ? "test" : "live";
+
   const [showSignIn, setShowSignIn] = useState(false);
   const [proPods, setProPods] = useState(10);
   const [products, setProducts] = useState<ProductsData | null>(null);
   const [purchaseLabel, setPurchaseLabel] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/api/lemon/products")
+    fetch(`/api/lemon/products?mode=${mode}`)
       .then((r) => r.json())
       .then(setProducts)
       .catch(() => {});
-  }, []);
+  }, [mode]);
 
   const tier = getProTier(proPods);
   const proTotal = (proPods * tier.pricePerPod).toFixed(2);
@@ -78,7 +83,7 @@ export default function PricingPage() {
       const res = await fetch("/api/lemon/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ variantId, email: session.user.email }),
+        body: JSON.stringify({ variantId, email: session.user.email, mode }),
       });
       const data = await res.json();
       if (data.url) {
@@ -88,10 +93,6 @@ export default function PricingPage() {
       console.error("Checkout error:", err);
     }
     setTimeout(() => setPurchaseLabel(null), 3000);
-  }
-
-  function handleSignedIn() {
-    setShowSignIn(false);
   }
 
   return (
@@ -115,6 +116,12 @@ export default function PricingPage() {
           </nav>
         </div>
       </header>
+
+      {mode === "test" && (
+        <div className="bg-amber-100 text-amber-800 text-center py-2 font-sans text-xs font-semibold uppercase tracking-wider">
+          Test Mode — {products?.paygo.length ?? 0} PayGo variants available
+        </div>
+      )}
 
       <main className="mx-auto w-full max-w-6xl flex-1 px-8 py-20">
         <div className="text-center mb-16">
@@ -158,10 +165,7 @@ export default function PricingPage() {
           </div>
 
           {/* PayGo — Pay-As-You-Go */}
-          <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-[0_4px_24px_rgba(0,0,0,0.01)] flex flex-col opacity-50 select-none relative">
-            <div className="absolute top-3 right-3 font-sans text-[10px] font-semibold uppercase tracking-wider text-gray-400 border border-gray-200 rounded-full px-2.5 py-0.5">
-              Coming Soon
-            </div>
+          <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-[0_4px_24px_rgba(0,0,0,0.01)] flex flex-col relative">
             <div className="flex items-center gap-3 mb-4">
               <div className="rounded-xl bg-black/5 p-2.5">
                 <Zap className="h-5 w-5 text-black" />
@@ -190,10 +194,10 @@ export default function PricingPage() {
                     <span className="font-sans text-xs text-gray-400 ml-1">({p.credits} pods)</span>
                   </div>
                   <button
-                    disabled
-                    className="font-sans rounded-lg bg-gray-300 px-4 py-1.5 text-xs font-medium text-white cursor-not-allowed"
+                    onClick={() => handlePurchase(p.variantId, `PayGo $${p.price}`)}
+                    className="font-sans rounded-lg bg-black px-4 py-1.5 text-xs font-medium text-white hover:bg-gray-900 transition-colors"
                   >
-                    Coming Soon
+                    {purchaseLabel === `PayGo $${p.price}` ? "Opening..." : "Buy"}
                   </button>
                 </div>
               ))}
@@ -210,10 +214,7 @@ export default function PricingPage() {
           </div>
 
           {/* Pro — Monthly Subscription */}
-          <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-[0_4px_24px_rgba(0,0,0,0.01)] flex flex-col opacity-50 select-none relative">
-            <div className="absolute top-3 right-3 font-sans text-[10px] font-semibold uppercase tracking-wider text-gray-400 border border-gray-200 rounded-full px-2.5 py-0.5">
-              Coming Soon
-            </div>
+          <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-[0_4px_24px_rgba(0,0,0,0.01)] flex flex-col relative">
             <div className="flex items-center gap-3 mb-4">
               <div className="rounded-xl bg-black/5 p-2.5">
                 <Sliders className="h-5 w-5 text-black" />
@@ -244,7 +245,7 @@ export default function PricingPage() {
                 step="5"
                 value={proPods}
                 onChange={handleSliderChange}
-                className="w-full accent-black h-2 rounded-full appearance-none cursor-pointer bg-gray-200 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-black [&::-webkit-slider-thumb]:shadow-md pointer-events-none"
+                className="w-full accent-black h-2 rounded-full appearance-none cursor-pointer bg-gray-200 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-black [&::-webkit-slider-thumb]:shadow-md"
               />
               <div className="flex justify-between mt-2">
                 <span className="font-sans text-[11px] text-gray-400">6 pods</span>
@@ -275,11 +276,14 @@ export default function PricingPage() {
             {/* Subscribe button */}
             <div className="mt-auto">
               <button
-                disabled
-                className="font-sans w-full rounded-xl bg-gray-300 px-6 py-3 text-sm font-medium text-white cursor-not-allowed"
-              >
-                Coming Soon
-              </button>
+              onClick={() => {
+                const variant = products?.pro.find(p => p.pods === proPods);
+                if (variant) handlePurchase(variant.variantId, `Pro ${proPods}`);
+              }}
+              className="font-sans w-full rounded-xl bg-black px-6 py-3 text-sm font-medium text-white hover:bg-gray-900 transition-colors"
+            >
+              {purchaseLabel === `Pro ${proPods}` ? "Opening..." : "Subscribe"}
+            </button>
             </div>
           </div>
         </div>
@@ -298,5 +302,13 @@ export default function PricingPage() {
 
       <SignInModal open={showSignIn} onClose={() => setShowSignIn(false)} onSignedIn={() => setShowSignIn(false)} />
     </div>
+  );
+}
+
+export default function PricingPage() {
+  return (
+    <Suspense fallback={null}>
+      <PricingContent />
+    </Suspense>
   );
 }

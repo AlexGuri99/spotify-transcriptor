@@ -1,19 +1,32 @@
-import { NextResponse } from "next/server";
-import { PAYGO_VARIANTS, PRO_VARIANTS, getPayGoVariantId, getProVariantId } from "@/lib/lemon-squeezy";
+import { NextRequest, NextResponse } from "next/server";
+import {
+  PAYGO_VARIANTS,
+  buildProVariants,
+  getPayGoVariantId,
+  getProVariantId,
+  type LemonMode,
+} from "@/lib/lemon-squeezy";
 
-export async function GET() {
-  const paygo = PAYGO_VARIANTS.map((v) => ({
-    price: v.price,
-    credits: v.credits,
-    variantId: getPayGoVariantId(v.credits),
-  })).filter((v) => v.variantId);
+export async function GET(req: NextRequest) {
+  const mode: LemonMode = req.nextUrl.searchParams.get("mode") === "test" ? "test" : "live";
 
-  const pro = PRO_VARIANTS.map((v) => ({
-    pods: v.pods,
-    pricePerPod: v.pricePerPod,
-    monthlyPrice: v.monthlyPrice,
-    variantId: getProVariantId(v.pods),
-  })).filter((v) => v.variantId);
+  const paygo = PAYGO_VARIANTS
+    .filter((v) => v.mode === mode)
+    .map((v) => ({
+      price: v.price,
+      credits: v.credits,
+      variantId: getPayGoVariantId(v.credits, mode),
+    }))
+    .filter((v) => v.variantId);
 
-  return NextResponse.json({ paygo, pro });
+  const pro = buildProVariants(mode)
+    .map((v) => ({
+      pods: v.pods,
+      pricePerPod: v.pricePerPod,
+      monthlyPrice: v.monthlyPrice,
+      variantId: getProVariantId(v.pods, mode),
+    }))
+    .filter((v) => v.variantId);
+
+  return NextResponse.json({ mode, paygo, pro });
 }

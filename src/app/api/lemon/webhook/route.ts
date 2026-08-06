@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { identifyVariant, verifyWebhookSignature } from "@/lib/lemon-squeezy";
+import { identifyVariant, verifyWebhookSignature, type LemonMode } from "@/lib/lemon-squeezy";
 import { setUserPlan, getUserData } from "@/lib/usage-tracker";
 
 /* ------------------------------------------------------------------ */
@@ -14,30 +14,23 @@ function markProcessed(eventId: string) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Determine mode from webhook payload                                 */
+/* ------------------------------------------------------------------ */
+
+function getMode(payload: any): LemonMode {
+  return payload.meta?.test_mode === true ? "test" : "live";
+}
+
+/* ------------------------------------------------------------------ */
 /* Webhook handler                                                    */
 /* ------------------------------------------------------------------ */
 
 export async function POST(req: NextRequest) {
   /* ---------------------------------------------------------------- */
-  /* Verify webhook signature                                         */
+  /* Parse the raw body first — we need it for signature verification  */
   /* ---------------------------------------------------------------- */
-  const secret = process.env.LEMON_SQUEEZY_WEBHOOK_SECRET;
-  if (!secret) {
-    console.error("[Lemon Webhook] LEMON_SQUEEZY_WEBHOOK_SECRET not configured");
-    return NextResponse.json({ error: "Not configured" }, { status: 500 });
-  }
-
-  const signature = req.headers.get("x-signature") ?? "";
   const rawBody = await req.text();
 
-  if (!verifyWebhookSignature(rawBody, signature, secret)) {
-    console.error("[Lemon Webhook] Invalid signature");
-    return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
-  }
-
-  /* ---------------------------------------------------------------- */
-  /* Parse the event                                                  */
-  /* ---------------------------------------------------------------- */
   let payload: any;
   try {
     payload = JSON.parse(rawBody);
@@ -45,19 +38,48 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
+  const mode = getMode(payload);
+
+  /* ---------------------------------------------------------------- */
+  /* Verify webhook signature                                         */
+  /* ---------------------------------------------------------------- */
+  const secret = process.env[`LEMON_SQUEEZY_${mode === "test" ? "TEST" : "LIVE"}_WEBHOOK_SECRET`];
+  if (!secret) {
+    console.error(`[Lemon Webhook] Webhook secret not configured for ${mode} mode`);
+    return NextResponse.json({ error: "Not configured" }, { status: 500 });
+  }
+
+  const signature = req.headers.get("x-signature") ?? "";
+
+  if (!verifyWebhookSignature(rawBody, signature, secret)) {
+    console.error(`[Lemon Webhook] Invalid signature (${mode})`);
+    return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Parse the event                                                  */
+  /* ---------------------------------------------------------------- */
   const eventName: string = payload.meta?.event_name ?? "";
   const eventId: string = payload.meta?.custom_data?.event_id ?? payload.data?.id ?? "";
 
-  console.log(`[Lemon Webhook] Event: ${eventName}`);
+  console.log(`[Lemon Webhook] Event: ${eventName} (mode: ${mode})`);
 
   /* ---------------------------------------------------------------- */
   /* Idempotency                                                      */
   /* ---------------------------------------------------------------- */
   if (eventId && PROCESSED_EVENT_IDS.has(eventId)) {
-    console.log(`[Lemon Webhook] ⏭️ Skipping duplicate event ${eventId}`);
+    console.log(`[Lemon Webhook] Skipping duplicate event ${eventId}`);
     return NextResponse.json({ ok: true, deduped: true });
   }
   if (eventId) markProcessed(eventId);
+
+  /* ---------------------------------------------------------------- */
+  /* In test mode, log but don't touch production data                */
+  /* ---------------------------------------------------------------- */
+  if (mode === "test") {
+    console.log(`[Lemon Webhook] Test mode event — acknowledging without applying to production data`);
+    return NextResponse.json({ ok: true, mode: "test" });
+  }
 
   /* ---------------------------------------------------------------- */
   /* Extract customer info                                            */
@@ -76,8 +98,6 @@ export async function POST(req: NextRequest) {
       /* PayGo — one-time payment succeeded                           */
       /* ------------------------------------------------------------ */
       case "order_created": {
-        // Lemon Squeezy sends variant IDs in first_order_item.variant_id
-        // or order_item.variant_id within the order data
         const variantId = String(
           payload.data?.attributes?.first_order_item?.variant_id
           ?? payload.data?.attributes?.order_item?.variant_id
@@ -91,7 +111,7 @@ export async function POST(req: NextRequest) {
           const currentCredits = user.creditsRemaining ?? 0;
           await setUserPlan(customerEmail, "credits", currentCredits + identified.credits);
           console.log(
-            `[Lemon Webhook] ✅ Added ${identified.credits} credits to ${customerEmail} (${currentCredits} → ${currentCredits + identified.credits})`
+            `[Lemon Webhook] Added ${identified.credits} credits to ${customerEmail} (${currentCredits} → ${currentCredits + identified.credits})`
           );
         }
         break;
@@ -109,26 +129,22 @@ export async function POST(req: NextRequest) {
 
         if (identified.type === "pro" && identified.pods && status === "active") {
           await setUserPlan(customerEmail, "pro", identified.pods);
-          console.log(`[Lemon Webhook] ✅ ${customerEmail} → Pro (${identified.pods} pods)`);
+          console.log(`[Lemon Webhook] ${customerEmail} → Pro (${identified.pods} pods)`);
         }
         break;
       }
 
       case "subscription_cancelled": {
-        // Lemon Squeezy sends this when the user cancels their subscription
-        // The subscription remains active until the period end
         const variantId = String(payload.data?.attributes?.variant_id ?? "");
         const identified = identifyVariant(variantId);
         const status = payload.data?.attributes?.status ?? "";
-        // If status is "cancelled" but not yet expired, the user still has access
-        // Only revert to free if the subscription is truly expired
         if (status === "expired" || status === "unpaid") {
           if (identified.type === "pro") {
             await setUserPlan(customerEmail, "free", 0);
-            console.log(`[Lemon Webhook] ✅ ${customerEmail} reverted to free (${status})`);
+            console.log(`[Lemon Webhook] ${customerEmail} reverted to free (${status})`);
           }
         } else {
-          console.log(`[Lemon Webhook] ℹ️ ${customerEmail} cancelled but still active (${status}) — keeping Pro`);
+          console.log(`[Lemon Webhook] ${customerEmail} cancelled but still active (${status}) — keeping Pro`);
         }
         break;
       }
@@ -138,13 +154,13 @@ export async function POST(req: NextRequest) {
         const identified = identifyVariant(variantId);
         if (identified.type === "pro") {
           await setUserPlan(customerEmail, "free", 0);
-          console.log(`[Lemon Webhook] ✅ ${customerEmail} reverted to free (subscription expired)`);
+          console.log(`[Lemon Webhook] ${customerEmail} reverted to free (subscription expired)`);
         }
         break;
       }
 
       default:
-        console.log(`[Lemon Webhook] ℹ️ Unhandled event: ${eventName}`);
+        console.log(`[Lemon Webhook] Unhandled event: ${eventName}`);
     }
   } catch (err) {
     console.error(`[Lemon Webhook] Error processing ${eventName}:`, err);
