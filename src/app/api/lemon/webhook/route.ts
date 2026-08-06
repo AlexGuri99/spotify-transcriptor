@@ -118,6 +118,35 @@ export async function POST(req: NextRequest) {
       }
 
       /* ------------------------------------------------------------ */
+      /* PayGo — refunded                                             */
+      /* ------------------------------------------------------------ */
+      case "order_refunded": {
+        const refundVariantId = String(
+          payload.data?.attributes?.first_order_item?.variant_id
+          ?? payload.data?.attributes?.order_item?.variant_id
+          ?? ""
+        );
+        const refundIdentified = identifyVariant(refundVariantId);
+        console.log(`[Lemon Webhook] order_refunded — variant: ${refundVariantId}, type: ${refundIdentified.type}, credits: ${refundIdentified.credits}`);
+
+        if (refundIdentified.type === "paygo" && refundIdentified.credits) {
+          const user = await getUserData(customerEmail);
+          const currentCredits = user.creditsRemaining ?? 0;
+          const deducted = Math.min(currentCredits, refundIdentified.credits);
+          const plan = currentCredits - deducted <= 0 ? "free" : "credits";
+          await setUserPlan(customerEmail, plan, currentCredits - deducted);
+          console.log(
+            `[Lemon Webhook] Refund removed ${deducted} credits from ${customerEmail} (${currentCredits} → ${currentCredits - deducted})`
+          );
+        }
+        if (refundIdentified.type === "pro") {
+          await setUserPlan(customerEmail, "free", 0);
+          console.log(`[Lemon Webhook] Refund removed Pro from ${customerEmail}`);
+        }
+        break;
+      }
+
+      /* ------------------------------------------------------------ */
       /* Pro subscription events                                      */
       /* ------------------------------------------------------------ */
       case "subscription_created":
