@@ -374,7 +374,7 @@ export async function getUsageStats(email: string): Promise<{
     remaining = Math.max(0, planLimit - usedThisMonth);
   } else if (user.plan === "pro") {
     planLimit = user.creditsRemaining > 0 ? user.creditsRemaining : 999;
-    remaining = Math.max(0, planLimit - usedThisMonth);
+    remaining = Math.max(0, planLimit); // Pod balance decrements per transcription
   } else {
     // "credits" plan — no monthly limit, but uses credit balance
     planLimit = Infinity;
@@ -390,12 +390,16 @@ export async function getUsageStats(email: string): Promise<{
   };
 }
 
-/** Deduct one credit from a PayGo user. Returns false if insufficient credits. */
+/** Deduct one pod/credit from a paid user (credits or pro). */
 export async function deductCredit(email: string): Promise<boolean> {
   const user = await getUserData(email);
-  if (user.plan !== "credits") return true; // Non-credits users don't need credit deduction
+  if (user.plan === "free") return true; // Free users tracked by monthly count
   if (user.creditsRemaining <= 0) return false;
-  await setUserPlan(email, "credits", user.creditsRemaining - 1);
+  if (user.plan === "pro") {
+    await setUserPlan(email, "pro", user.creditsRemaining - 1);
+  } else {
+    await setUserPlan(email, "credits", user.creditsRemaining - 1);
+  }
   return true;
 }
 

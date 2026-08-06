@@ -193,12 +193,21 @@ function PricingContent() {
                     <span className="font-sans text-sm font-semibold text-black">${p.price}</span>
                     <span className="font-sans text-xs text-gray-400 ml-1">({p.credits} pods)</span>
                   </div>
-                  <button
-                    onClick={() => handlePurchase(p.variantId, `PayGo $${p.price}`)}
-                    className="font-sans rounded-lg bg-black px-4 py-1.5 text-xs font-medium text-white hover:bg-gray-900 transition-colors"
-                  >
-                    {purchaseLabel === `PayGo $${p.price}` ? "Opening..." : "Buy"}
-                  </button>
+                  {session?.user?.email ? (
+                    <button
+                      onClick={() => handlePurchase(p.variantId, `PayGo $${p.price}`)}
+                      className="font-sans rounded-lg bg-black px-4 py-1.5 text-xs font-medium text-white hover:bg-gray-900 transition-colors"
+                    >
+                      {purchaseLabel === `PayGo $${p.price}` ? "Opening..." : "Buy"}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => setShowSignIn(true)}
+                      className="font-sans rounded-lg bg-black px-4 py-1.5 text-xs font-medium text-white hover:bg-gray-900 transition-colors"
+                    >
+                      Log In
+                    </button>
+                  )}
                 </div>
               ))}
               {!products && (
@@ -241,7 +250,7 @@ function PricingContent() {
               <input
                 type="range"
                 min="6"
-                max="120"
+                max="50"
                 step="5"
                 value={proPods}
                 onChange={handleSliderChange}
@@ -249,23 +258,19 @@ function PricingContent() {
               />
               <div className="flex justify-between mt-2">
                 <span className="font-sans text-[11px] text-gray-400">6 pods</span>
-                <span className="font-sans text-[11px] text-gray-400">120+ pods</span>
+                <span className="font-sans text-[11px] text-gray-400">50 pods</span>
               </div>
             </div>
 
             {/* Tier indicators */}
-            <div className="grid grid-cols-3 gap-2 mb-6">
+            <div className="grid grid-cols-2 gap-2 mb-6">
               <div className="rounded-lg border border-gray-100 px-3 py-2 text-center">
                 <p className="font-sans text-xs font-semibold text-black">6–30</p>
                 <p className="font-sans text-[11px] text-gray-500">$0.17/pod</p>
               </div>
               <div className="rounded-lg border border-gray-100 px-3 py-2 text-center">
-                <p className="font-sans text-xs font-semibold text-black">35–75</p>
+                <p className="font-sans text-xs font-semibold text-black">35–50</p>
                 <p className="font-sans text-[11px] text-gray-500">$0.14/pod</p>
-              </div>
-              <div className="rounded-lg border border-gray-100 px-3 py-2 text-center">
-                <p className="font-sans text-xs font-semibold text-black">80–120+</p>
-                <p className="font-sans text-[11px] text-gray-500">$0.11/pod</p>
               </div>
             </div>
 
@@ -275,15 +280,24 @@ function PricingContent() {
 
             {/* Subscribe button */}
             <div className="mt-auto">
-              <button
-              onClick={() => {
-                const variant = products?.pro.find(p => p.pods === proPods);
-                if (variant) handlePurchase(variant.variantId, `Pro ${proPods}`);
-              }}
-              className="font-sans w-full rounded-xl bg-black px-6 py-3 text-sm font-medium text-white hover:bg-gray-900 transition-colors"
-            >
-              {purchaseLabel === `Pro ${proPods}` ? "Opening..." : "Subscribe"}
-            </button>
+              {session?.user?.email ? (
+                <button
+                  onClick={() => {
+                    const variant = products?.pro.find(p => p.pods === proPods);
+                    if (variant) handlePurchase(variant.variantId, `Pro ${proPods}`);
+                  }}
+                  className="font-sans w-full rounded-xl bg-black px-6 py-3 text-sm font-medium text-white hover:bg-gray-900 transition-colors"
+                >
+                  {purchaseLabel === `Pro ${proPods}` ? "Opening..." : "Subscribe"}
+                </button>
+              ) : (
+                <button
+                  onClick={() => setShowSignIn(true)}
+                  className="font-sans w-full rounded-xl bg-black px-6 py-3 text-sm font-medium text-white hover:bg-gray-900 transition-colors"
+                >
+                  Log In
+                </button>
+              )}
             </div>
           </div>
         </div>

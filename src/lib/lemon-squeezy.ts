@@ -94,7 +94,7 @@ export function getProTier(pods: number): number {
 export function buildProVariants(mode: LemonMode): ProVariant[] {
   const variants: ProVariant[] = [];
   const p = mode === "test" ? "LEMON_SQUEEZY_TEST" : "LEMON_SQUEEZY_LIVE";
-  for (let pods = 10; pods <= 120; pods += 5) {
+  for (let pods = 10; pods <= 50; pods += 5) {
     const pricePerPod = getProTier(pods);
     variants.push({
       pods,
