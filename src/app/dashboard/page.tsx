@@ -737,8 +737,29 @@ function WorkspaceTab({ email: _email }: { email: string }) {
 /* Settings Tab                                                       */
 /* ------------------------------------------------------------------ */
 
+interface BillingData {
+  urls: {
+    customerPortal: string;
+    updatePaymentMethod: string | null;
+    updateSubscription: string | null;
+  } | null;
+  subscriptions: {
+    id: string;
+    productName: string;
+    status: string;
+    renewsAt: string;
+  }[];
+  orders: {
+    id: string;
+    productName: string;
+    totalFormatted: string;
+    createdAt: string;
+  }[];
+}
+
 function SettingsTab({ email }: { email: string }) {
   const [stats, setStats] = useState<UsageStats | null>(null);
+  const [billing, setBilling] = useState<BillingData | null>(null);
   const [cpCurrent, setCpCurrent] = useState("");
   const [cpNew, setCpNew] = useState("");
   const [cpConfirm, setCpConfirm] = useState("");
@@ -750,9 +771,14 @@ function SettingsTab({ email }: { email: string }) {
   const [deleteError, setDeleteError] = useState("");
 
   useEffect(() => {
-    fetch("/api/dashboard/stats")
-      .then((r) => r.json())
-      .then(setStats)
+    Promise.all([
+      fetch("/api/dashboard/stats").then((r) => r.json()),
+      fetch("/api/lemon/billing").then((r) => r.json()),
+    ])
+      .then(([s, b]) => {
+        setStats(s);
+        setBilling(b);
+      })
       .catch(() => {});
   }, []);
 
@@ -847,18 +873,43 @@ function SettingsTab({ email }: { email: string }) {
         <h3 className="font-sans font-bold text-black mb-4">Billing</h3>
         <div className="p-6 rounded-xl bg-gray-50 border border-gray-100">
           <p className="font-sans text-sm text-gray-600 leading-relaxed">
-            Payments are processed securely through Lemon Squeezy. Visit the store to manage your subscription, view billing history, or purchase more pods.
+            Payments are processed securely through Lemon Squeezy. {billing?.subscriptions?.length ? "Manage your subscription, update your payment method, or view billing history below." : "Visit the store to purchase pods or manage your billing."}
           </p>
           <div className="flex flex-wrap items-center gap-3 mt-4">
-            <a
-              href="https://tranzkript.lemonsqueezy.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-sans inline-flex items-center gap-2 rounded-xl bg-black px-5 py-2.5 text-sm font-medium text-white hover:bg-gray-900 transition-all"
-            >
-              Manage Billing
-              <ExternalLink className="h-3.5 w-3.5" />
-            </a>
+            {billing?.urls?.customerPortal ? (
+              <>
+                <a
+                  href={billing.urls.customerPortal}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-sans inline-flex items-center gap-2 rounded-xl bg-black px-5 py-2.5 text-sm font-medium text-white hover:bg-gray-900 transition-all"
+                >
+                  Manage Billing
+                  <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+                {billing.urls.updatePaymentMethod && (
+                  <a
+                    href={billing.urls.updatePaymentMethod}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-sans inline-flex items-center gap-2 rounded-xl border border-gray-200 px-5 py-2.5 text-sm font-medium text-gray-700 hover:border-black hover:text-black transition-all"
+                  >
+                    Update Card
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </a>
+                )}
+              </>
+            ) : (
+              <a
+                href="https://tranzkript.lemonsqueezy.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-sans inline-flex items-center gap-2 rounded-xl bg-black px-5 py-2.5 text-sm font-medium text-white hover:bg-gray-900 transition-all"
+              >
+                Visit Store
+                <ExternalLink className="h-3.5 w-3.5" />
+              </a>
+            )}
             {stats?.plan === "credits" && (
               <Link
                 href="/pricing"
@@ -867,7 +918,7 @@ function SettingsTab({ email }: { email: string }) {
                 Buy more credits
               </Link>
             )}
-            {stats?.plan === "free" && (
+            {(!stats || stats?.plan === "free") && (
               <Link
                 href="/pricing"
                 className="font-sans inline-flex items-center gap-2 rounded-xl border border-gray-200 px-5 py-2.5 text-sm font-medium text-gray-700 hover:border-black hover:text-black transition-all"
@@ -876,6 +927,11 @@ function SettingsTab({ email }: { email: string }) {
               </Link>
             )}
           </div>
+          {billing?.subscriptions?.map((sub) => (
+            <div key={sub.id} className="mt-3 text-xs text-gray-400">
+              {sub.productName} — {sub.status}{sub.renewsAt ? `, renews ${new Date(sub.renewsAt).toLocaleDateString()}` : ""}
+            </div>
+          ))}
         </div>
       </div>
 
