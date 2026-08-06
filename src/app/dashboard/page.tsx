@@ -927,11 +927,17 @@ function SettingsTab({ email }: { email: string }) {
               </Link>
             )}
           </div>
-          {billing?.subscriptions?.map((sub) => (
-            <div key={sub.id} className="mt-3 text-xs text-gray-400">
-              {sub.productName} — {sub.status}{sub.renewsAt ? `, renews ${new Date(sub.renewsAt).toLocaleDateString()}` : ""}
-            </div>
-          ))}
+          {billing?.subscriptions?.map((sub) => {
+            const d = sub.renewsAt ? new Date(sub.renewsAt) : null;
+            const renews = d
+              ? `${d.getDate()} ${d.toLocaleDateString("en-GB", { month: "short" })} ${d.getFullYear()}`
+              : "";
+            return (
+              <div key={sub.id} className="font-sans mt-3 text-xs text-gray-400">
+                {sub.productName} — active{renews ? `, renews ${renews}` : ""}
+              </div>
+            );
+          })}
         </div>
       </div>
 
