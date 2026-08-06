@@ -65,6 +65,7 @@ function PricingContent() {
 
   const tier = getProTier(proPods);
   const proTotal = (proPods * tier.pricePerPod).toFixed(2);
+  const isAuthorized = session?.user?.email === "alexgurinm99@gmail.com";
 
   function handleSliderChange(e: React.ChangeEvent<HTMLInputElement>) {
     const raw = Number(e.target.value);
@@ -165,7 +166,12 @@ function PricingContent() {
           </div>
 
           {/* PayGo — Pay-As-You-Go */}
-          <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-[0_4px_24px_rgba(0,0,0,0.01)] flex flex-col relative">
+          <div className={`rounded-2xl border ${isAuthorized ? "border-gray-200" : "border-gray-200"} bg-white p-8 shadow-[0_4px_24px_rgba(0,0,0,0.01)] flex flex-col relative ${isAuthorized ? "" : "opacity-50 select-none pointer-events-none"}`}>
+            {!isAuthorized && (
+              <div className="absolute top-3 right-3 font-sans text-[10px] font-semibold uppercase tracking-wider text-gray-400 border border-gray-200 rounded-full px-2.5 py-0.5">
+                Coming Soon
+              </div>
+            )}
             <div className="flex items-center gap-3 mb-4">
               <div className="rounded-xl bg-black/5 p-2.5">
                 <Zap className="h-5 w-5 text-black" />
@@ -193,7 +199,14 @@ function PricingContent() {
                     <span className="font-sans text-sm font-semibold text-black">${p.price}</span>
                     <span className="font-sans text-xs text-gray-400 ml-1">({p.credits} pods)</span>
                   </div>
-                  {session?.user?.email ? (
+                  {!isAuthorized ? (
+                    <button
+                      disabled
+                      className="font-sans rounded-lg bg-gray-300 px-4 py-1.5 text-xs font-medium text-white cursor-not-allowed"
+                    >
+                      Coming Soon
+                    </button>
+                  ) : session?.user?.email ? (
                     <button
                       onClick={() => handlePurchase(p.variantId, `PayGo $${p.price}`)}
                       className="font-sans rounded-lg bg-black px-4 py-1.5 text-xs font-medium text-white hover:bg-gray-900 transition-colors"
@@ -223,7 +236,12 @@ function PricingContent() {
           </div>
 
           {/* Pro — Monthly Subscription */}
-          <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-[0_4px_24px_rgba(0,0,0,0.01)] flex flex-col relative">
+          <div className={`rounded-2xl border border-gray-200 bg-white p-8 shadow-[0_4px_24px_rgba(0,0,0,0.01)] flex flex-col relative ${isAuthorized ? "" : "opacity-50 select-none pointer-events-none"}`}>
+            {!isAuthorized && (
+              <div className="absolute top-3 right-3 font-sans text-[10px] font-semibold uppercase tracking-wider text-gray-400 border border-gray-200 rounded-full px-2.5 py-0.5">
+                Coming Soon
+              </div>
+            )}
             <div className="flex items-center gap-3 mb-4">
               <div className="rounded-xl bg-black/5 p-2.5">
                 <Sliders className="h-5 w-5 text-black" />
@@ -280,7 +298,14 @@ function PricingContent() {
 
             {/* Subscribe button */}
             <div className="mt-auto">
-              {session?.user?.email ? (
+              {!isAuthorized ? (
+                <button
+                  disabled
+                  className="font-sans w-full rounded-xl bg-gray-300 px-6 py-3 text-sm font-medium text-white cursor-not-allowed"
+                >
+                  Coming Soon
+                </button>
+              ) : session?.user?.email ? (
                 <button
                   onClick={() => {
                     const variant = products?.pro.find(p => p.pods === proPods);
