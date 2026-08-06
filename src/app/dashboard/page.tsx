@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { Newsreader, Inter } from "next/font/google";
 import Link from "next/link";
 import SiteFooter from "@/components/site-footer";
-import { getProTier } from "@/lib/whop-products";
+import { getProTier } from "@/lib/lemon-squeezy";
 import {
   Videotape,
   LogOut,
@@ -847,11 +847,11 @@ function SettingsTab({ email }: { email: string }) {
         <h3 className="font-sans font-bold text-black mb-4">Billing</h3>
         <div className="p-6 rounded-xl bg-gray-50 border border-gray-100">
           <p className="font-sans text-sm text-gray-600 leading-relaxed">
-            Payments are processed securely through Whop. To manage your subscription, view your billing history, or cancel, visit the Whop dashboard.
+            Payments are processed securely through Lemon Squeezy. Visit the store to manage your subscription, view billing history, or purchase more pods.
           </p>
           <div className="flex flex-wrap items-center gap-3 mt-4">
             <a
-              href="https://whop.com/dashboard"
+              href="https://tranzkript.lemonsqueezy.com"
               target="_blank"
               rel="noopener noreferrer"
               className="font-sans inline-flex items-center gap-2 rounded-xl bg-black px-5 py-2.5 text-sm font-medium text-white hover:bg-gray-900 transition-all"
