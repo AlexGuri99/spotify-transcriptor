@@ -47,10 +47,19 @@ export default function RefundPage() {
       </header>
 
       <main className="mx-auto w-full max-w-3xl flex-1 px-8 py-16">
-        <h1 className={`text-4xl md:text-5xl font-bold italic tracking-tight leading-[1.1] text-black mb-6 ${editorialSerif.className} font-editorial`}>
+        <h1 className={`text-4xl md:text-5xl font-bold italic tracking-tight leading-[1.1] text-black mb-8 ${editorialSerif.className} font-editorial`}>
           Refund Policy
         </h1>
-        <p className="font-[family-name:var(--font-barlow-condensed)] text-base text-gray-400">Coming soon.</p>
+        <div className="font-sans space-y-6 text-gray-600 leading-relaxed">
+          <p>
+            For subscriptions, we allow refunds within 7 days of your initial purchase. Please contact us at{" "}
+            <a href="mailto:support@tranzkript.com" className="text-black underline underline-offset-2 hover:text-gray-600 transition-colors">support@tranzkript.com</a>{" "}
+            for any refund requests.
+          </p>
+          <p>
+            Refunds are processed through Lemon Squeezy and will be returned to your original payment method. If you have any questions or concerns, don&apos;t hesitate to reach out.
+          </p>
+        </div>
       </main>
 
       <SiteFooter />
