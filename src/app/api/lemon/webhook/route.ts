@@ -149,6 +149,20 @@ export async function POST(req: NextRequest) {
         break;
       }
 
+      case "subscription_payment_success": {
+        const variantId2 = String(payload.data?.attributes?.variant_id ?? "");
+        const identified2 = identifyVariant(variantId2);
+        console.log(`[Lemon Webhook] subscription_payment_success — variant: ${variantId2}, identified: ${identified2.type}, pods: ${identified2.pods}`);
+        // Reset credits on monthly renewal
+        if (identified2.type === "pro" && identified2.pods) {
+          // Get current user data to preserve plan type
+          const user = await getUserData(customerEmail);
+          await setUserPlan(customerEmail, "pro", identified2.pods);
+          console.log(`[Lemon Webhook] ${customerEmail} Pro renewed — pods reset to ${identified2.pods}`);
+        }
+        break;
+      }
+
       case "subscription_expired": {
         const variantId = String(payload.data?.attributes?.variant_id ?? "");
         const identified = identifyVariant(variantId);

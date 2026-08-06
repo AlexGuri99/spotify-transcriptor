@@ -364,21 +364,18 @@ export async function getUsageStats(email: string): Promise<{
 
   // Plan limits:
   // - free: 5 per month
-  // - pro: creditsRemaining stores the pod count (e.g., 30 pods)
-  // - credits: no monthly limit, uses credits balance
+  // - pro: creditsRemaining stores the pod count (e.g., 30 pods), decremented per transcription
+  // - credits: no monthly limit, uses credit balance, decremented per transcription
   let planLimit: number;
   let remaining: number;
 
   if (user.plan === "free") {
     planLimit = FREE_PODS_PER_MONTH;
     remaining = Math.max(0, planLimit - usedThisMonth);
-  } else if (user.plan === "pro") {
-    planLimit = user.creditsRemaining > 0 ? user.creditsRemaining : 999;
-    remaining = Math.max(0, planLimit); // Pod balance decrements per transcription
   } else {
-    // "credits" plan — no monthly limit, but uses credit balance
-    planLimit = Infinity;
-    remaining = Infinity;
+    // Pro or credits — show original pod count as denominator
+    planLimit = usedThisMonth + user.creditsRemaining;
+    remaining = user.creditsRemaining;
   }
 
   return {
