@@ -171,20 +171,45 @@ async function scrapeSpotifyEpisode(url: string): Promise<ScrapedMetadata | null
   let episodeTitle: string;
   let showName: string;
 
-  const hasIndexPrefix = /^(?:×¤×¨×§\s|Ep[\s.]|Episode\s)/i.test(rawTitle);
-  const dashMatch = rawTitle.match(/^(.+?)\s+[-â€“â€”]\s+(.+)$/);
-
-  if (dashMatch && !hasIndexPrefix) {
-    episodeTitle = dashMatch[1].trim();
-    showName = dashMatch[2].trim();
-    console.log("-> Split by dash â€” episode:", episodeTitle, "| show:", showName);
+  /* ── Show name extraction ────────────────────────────────────────────
+   * Spotify oEmbed sometimes omits author_name for podcasts. The title
+   * field follows a multi-pipe format:
+   *   "Episode Details | Show Name | Category Keywords"
+   * The second " | " segment is the actual show name, NOT the last one
+   * (which contains marketing/category text like "Fantasy Premier League Tips").
+   * ───────────────────────────────────────────────────────────────── */
+  if (authorName) {
+    showName = authorName;
   } else {
-    episodeTitle = rawTitle;
-    showName = authorName || "Unknown Show";
-    console.log("-> Using full title â€” episode:", episodeTitle, "| show hint:", showName);
+    const pipeParts = rawTitle.split(" | ").map((s) => s.trim());
+    if (pipeParts.length >= 3) {
+      // Format: "Episode Info | Show Name | Keywords"
+      showName = pipeParts[1];
+    } else if (pipeParts.length === 2) {
+      // Format: "Episode Title | Show Name"
+      showName = pipeParts[1];
+    } else {
+      showName = "Unknown Show";
+    }
   }
 
-  if (!showName) showName = "Unknown Show";
+  /* ── Episode title extraction ────────────────────────────────────────
+   * Strip " | ShowName" and " | Keywords" tails from the title, then
+   * apply the dash-split for the clean episode description.
+   * ───────────────────────────────────────────────────────────────── */
+  const hasIndexPrefix = /^(?:×¤×¨×§\s|Ep[\s.]|Episode\s)/i.test(rawTitle);
+
+  if (hasIndexPrefix) {
+    episodeTitle = rawTitle;
+  } else {
+    // Strip trailing " | ShowName" and " | Keywords" so they don't pollute
+    const pipeParts = rawTitle.split(" | ").map((s) => s.trim());
+    const titleMinusShow = pipeParts[0];
+
+    // Now try dash-split: "Title - Subtitle" within the cleaned portion
+    const dashMatch = titleMinusShow.match(/^(.+?)\s+[-â€“â€”]\s+(.+)$/);
+    episodeTitle = dashMatch ? dashMatch[1].trim() : titleMinusShow;
+  }
 
   console.log("-> Final â€” episodeTitle:", episodeTitle, "| showName:", showName);
   return { episodeTitle, showName };
@@ -216,7 +241,9 @@ async function findRssFeed(
 
         // Score every result using title-overlap against the target episode,
         // and skip known false-positive collections unless it's an exact match.
-        const scored: { result: any; score: number; exact: boolean }[] = [];
+        const scored: { result: any; score: number; exact: boolean; showMatchScore: number }[] = [];
+
+        const sanitizedShow = showName ? sanitizeTitle(showName) : "";
 
         for (const r of epData.results) {
           const sanitizedTrack = sanitizeTitle(r.trackName ?? "");
@@ -238,14 +265,43 @@ async function findRssFeed(
             continue;
           }
 
-          scored.push({ result: r, score, exact: exactMatch });
+          /* ── Show-name cross-verification ───────────────────────────────
+           * The iTunes episode search returns episodes from ALL shows.
+           * Check that the result's collectionName matches the show name
+           * from oEmbed, so results from unrelated shows are deprioritized.
+           * ───────────────────────────────────────────────── */
+          const sanitizedCollection = sanitizeTitle(r.collectionName ?? "");
+          const showMatchScore = sanitizedShow
+            ? wordOverlapRatio(sanitizedCollection, sanitizedShow)
+            : 0;
+
+          scored.push({ result: r, score, exact: exactMatch, showMatchScore });
         }
 
         if (scored.length) {
-          scored.sort((a, b) => b.score - a.score);
+          // Sort by show-match first, then by title-score
+          scored.sort((a, b) => {
+            // Exact matches on both show AND title rank highest
+            if (a.exact && a.showMatchScore >= 0.5) return -1;
+            if (b.exact && b.showMatchScore >= 0.5) return 1;
+            // Then sort by combined score (title + show)
+            const aCombined = a.score + a.showMatchScore;
+            const bCombined = b.score + b.showMatchScore;
+            return bCombined - aCombined;
+          });
 
+          /* When taking the direct-audio shortcut, require that the
+           * show names also match — otherwise we risk downloading
+           * audio from a completely different podcast. */
+          const hasMatchingShow = scored.some((s) => s.showMatchScore >= 0.5);
           const best =
+            (hasMatchingShow
+              ? scored.find((s) => (s.result.enclosureUrl ?? s.result.previewUrl) && s.showMatchScore >= 0.5)
+              : null) ??
             scored.find((s) => s.result.enclosureUrl ?? s.result.previewUrl) ??
+            (hasMatchingShow
+              ? scored.find((s) => s.result.feedUrl && s.showMatchScore >= 0.5)
+              : null) ??
             scored.find((s) => s.result.feedUrl);
 
           if (best) {
@@ -339,8 +395,8 @@ function wordOverlapRatio(a: string, b: string): number {
   return common / Math.max(wa.length, wb.length);
 }
 
-/** Parse the RSS XML and locate the episode with a matching title. */
-async function findEpisodeInFeed(feedUrl: string, episodeTitle: string): Promise<RssEpisode | null> {
+/** Parse the RSS XML and locate the episode with a matching title or GUID. */
+async function findEpisodeInFeed(feedUrl: string, episodeTitle: string, spotifyEpisodeId?: string): Promise<RssEpisode | null> {
   const parser = new Parser({
     timeout: 15_000,
     headers: {
@@ -350,6 +406,25 @@ async function findEpisodeInFeed(feedUrl: string, episodeTitle: string): Promise
 
   const feed = await parser.parseURL(feedUrl);
   if (!feed.items?.length) return null;
+
+  /* ── Priority 1: GUID matching ───────────────────────────────────
+   * Many podcast RSS feeds include the Spotify episode URL directly
+   * as the GUID. This is vastly more reliable than title matching
+   * because it uses the actual episode identifier instead of text.
+   * ────────────────────────────────────────────────────────────── */
+  if (spotifyEpisodeId) {
+    const lowerId = spotifyEpisodeId.toLowerCase();
+    for (const item of feed.items) {
+      const guid = (item.guid ?? "").toLowerCase();
+      if (guid.includes(lowerId)) {
+        const enclosureUrl = item.enclosure?.url ?? item.link ?? null;
+        if (enclosureUrl) {
+          console.log("-> GUID match found for episode", spotifyEpisodeId);
+          return { title: item.title ?? episodeTitle, enclosureUrl };
+        }
+      }
+    }
+  }
 
   const sanitizedTarget = sanitizeTitle(episodeTitle);
   const targetEpNum = extractEpisodeNumber(episodeTitle);
@@ -379,7 +454,7 @@ async function findEpisodeInFeed(feedUrl: string, episodeTitle: string): Promise
     }
   }
 
-  if (bestFallback && bestFallback.score >= 0.45) {
+  if (bestFallback && bestFallback.score >= 0.70) {
     const enclosureUrl = bestFallback.item.enclosure?.url ?? bestFallback.item.link ?? null;
     if (enclosureUrl) {
       return { title: bestFallback.item.title ?? episodeTitle, enclosureUrl };
@@ -870,7 +945,7 @@ export async function POST(req: NextRequest): Promise<Response> {
         audioFileProcessed = true;
       } else if (rssFeedUrl) {
         try {
-          const episode = await findEpisodeInFeed(rssFeedUrl, metadata.episodeTitle);
+          const episode = await findEpisodeInFeed(rssFeedUrl, metadata.episodeTitle, episodeId);
           if (episode?.enclosureUrl) {
             episodeFound = true;
             tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "st-"));
