@@ -423,6 +423,18 @@ export default function HomePage() {
                     </button>
                   </div>
 
+                  {/* Filter ads toggle */}
+                  <label className="font-sans flex items-center gap-2 text-xs text-gray-400 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={filterAds}
+                      onChange={(e) => setFilterAds(e.target.checked)}
+                      disabled={isLoading}
+                      className="h-3.5 w-3.5 rounded border-gray-300 text-black focus:ring-black/20 cursor-pointer"
+                    />
+                    Filter out sponsor ads
+                  </label>
+
                   {statusMessage && (
                     <div className="font-mono text-xs text-gray-400 flex items-center gap-2 pt-2">
                       <span className="inline-block h-1.5 w-1.5 animate-ping rounded-full bg-black" />
