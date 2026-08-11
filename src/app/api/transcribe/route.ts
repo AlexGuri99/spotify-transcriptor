@@ -570,37 +570,109 @@ async function transcribeChunk(chunkPath: string, chunkIndex: number, totalChunk
 
 /** Pass the transcript through an LLM to strip sponsor/ad segments. */
 async function filterAds(openai: OpenAI, rawTranscript: string, segments: TranscriptSegment[]): Promise<{ text: string; segments: TranscriptSegment[] }> {
+  if (segments.length === 0) return { text: rawTranscript, segments };
+
+  // Label segments with indices so the LLM can reference them
+  const segmentLines = segments
+    .map((s, i) => `[${i}] ${s.text}`)
+    .join("\n\n");
+
   const response = await openai.chat.completions.create({
     model: "openai/gpt-4o-mini",
     messages: [
       {
         role: "system",
         content: [
-          "You are a podcast transcript editor. Your task is to remove sponsor reads,",
-          "advertisements, promotional codes, and paid endorsements from the transcript.",
-          "Rules:",
-          "- Remove any segment that is a sponsor mention, ad read, or promo code pitch.",
-          "- Keep all actual show content intact â€” host discussions, interviews, etc.",
-          "- Do NOT rewrite or paraphrase anything; remove only the ad segments.",
-          "- If a sentence is partly ad and partly content, keep the content portion.",
-          "- Return ONLY the cleaned transcript, no commentary or explanations.",
+          "You are a podcast transcript editor. Segments from the audio are labeled with [index].",
+          "Identify which segments contain sponsor reads, ads, or promotional content.",
+          "Also find the exact point in the first content segment where the actual show starts.",
+          "",
+          "Return ONLY valid JSON (no markdown, no explanation). Example:",
+          JSON.stringify({
+            keep_indices: [3, 4, 5],
+            first_content_text: null,
+          }),
+          "",
+          "- keep_indices: 0-based indices of segments to KEEP. Exclude ad segments entirely.",
+          '- first_content_text: if the first kept segment also contains the tail of an ad (starts mid-sentence in the podcast), provide the exact text where the podcast content begins within that segment. If the segment starts with clean podcast content, set to null.',
         ].join("\n"),
       },
-      { role: "user", content: rawTranscript },
+      { role: "user", content: segmentLines },
     ],
     temperature: 0.1,
     max_tokens: 4096,
   });
 
-  const cleaned = response.choices?.[0]?.message?.content?.trim();
-  if (!cleaned) return { text: rawTranscript, segments };
+  const raw = response.choices?.[0]?.message?.content?.trim();
+  if (!raw) return { text: rawTranscript, segments };
 
-  if (segments.length === 0) return { text: cleaned, segments };
+  // Strategy 1: parse structured JSON from the LLM
+  const jsonResult = tryParseFilterJson(raw, segments);
+  if (jsonResult) return jsonResult;
 
-  const cleanedSegments = segments.filter((seg) => cleaned.includes(seg.text)).map((seg) => ({ ...seg }));
-  if (!cleanedSegments.length) return { text: rawTranscript, segments };
+  // Strategy 2: fallback — word-overlap scoring
+  return filterByOverlap(raw, rawTranscript, segments);
+}
 
-  return { text: cleaned, segments: cleanedSegments };
+/** Attempt to parse structured JSON from the LLM response. */
+function tryParseFilterJson(
+  raw: string,
+  segments: TranscriptSegment[]
+): { text: string; segments: TranscriptSegment[] } | null {
+  let parsed: any;
+  try {
+    // Strip markdown fences if present
+    const json = raw.replace(/^```(?:json)?\s*/, "").replace(/\s*```$/, "");
+    parsed = JSON.parse(json);
+  } catch {
+    return null;
+  }
+
+  const keep: number[] = parsed?.keep_indices;
+  if (!Array.isArray(keep) || keep.length === 0) return null;
+
+  const keepSet = new Set(keep);
+  let kept = segments.filter((_, i) => keepSet.has(i));
+  if (kept.length === 0) return null;
+
+  // Trim the boundary segment if the LLM told us where content starts
+  const firstContentText: string | undefined = parsed.first_content_text;
+  const firstKeptIdx = Math.min(...keep);
+  const boundarySeg = segments[firstKeptIdx];
+  if (firstContentText && typeof firstContentText === "string" && firstContentText.length > 10) {
+    const startPos = boundarySeg.text.indexOf(firstContentText);
+    if (startPos > 0) {
+      kept[0] = { ...boundarySeg, text: boundarySeg.text.slice(startPos) };
+    }
+  }
+
+  const text = kept.map((s) => s.text).join("\n\n");
+  return { text, segments: kept };
+}
+
+/** Fallback: keep segments whose words substantially overlap with the LLM-cleaned text. */
+function filterByOverlap(
+  cleaned: string,
+  rawTranscript: string,
+  segments: TranscriptSegment[]
+): { text: string; segments: TranscriptSegment[] } {
+  const cleanedLower = cleaned.toLowerCase();
+
+  function overlapRatio(segText: string): number {
+    const words = segText.toLowerCase().split(/\s+/).filter((w) => w.length > 3);
+    if (words.length === 0) return 0;
+    let matched = 0;
+    for (const w of words) {
+      if (cleanedLower.includes(w)) matched++;
+    }
+    return matched / words.length;
+  }
+
+  const keptSegments = segments.filter((seg) => overlapRatio(seg.text) >= 0.5);
+  if (keptSegments.length === 0) return { text: rawTranscript, segments };
+
+  const text = keptSegments.map((s) => s.text).join("\n\n");
+  return { text, segments: keptSegments };
 }
 
 /* ------------------------------------------------------------------ */
