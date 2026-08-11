@@ -595,6 +595,8 @@ async function filterAds(openai: OpenAI, rawTranscript: string, segments: Transc
   const cleaned = response.choices?.[0]?.message?.content?.trim();
   if (!cleaned) return { text: rawTranscript, segments };
 
+  if (segments.length === 0) return { text: cleaned, segments };
+
   const cleanedSegments = segments.filter((seg) => cleaned.includes(seg.text)).map((seg) => ({ ...seg }));
   if (!cleanedSegments.length) return { text: rawTranscript, segments };
 
