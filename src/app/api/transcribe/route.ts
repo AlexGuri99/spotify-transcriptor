@@ -296,9 +296,9 @@ async function findRssFeed(
           const hasMatchingShow = scored.some((s) => s.showMatchScore >= 0.5);
           const best =
             (hasMatchingShow
-              ? scored.find((s) => (s.result.enclosureUrl ?? s.result.previewUrl) && s.showMatchScore >= 0.5)
+              ? scored.find((s) => s.result.enclosureUrl && s.showMatchScore >= 0.5)
               : null) ??
-            scored.find((s) => s.result.enclosureUrl ?? s.result.previewUrl) ??
+            scored.find((s) => s.result.enclosureUrl) ??
             (hasMatchingShow
               ? scored.find((s) => s.result.feedUrl && s.showMatchScore >= 0.5)
               : null) ??
@@ -312,7 +312,7 @@ async function findRssFeed(
               best.result.trackName
             );
             const directAudioUrl =
-              best.result.enclosureUrl ?? best.result.previewUrl ?? null;
+              best.result.enclosureUrl ?? null;
             if (directAudioUrl) {
               console.log(
                 "-> ðŸš€ Shortcut! Found direct audio stream link:",
