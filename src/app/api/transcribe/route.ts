@@ -844,6 +844,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   const executionPromise = (async () => {
     let tmpDir = "";
     try {
+      const openai = createOpenRouterClient();
       /* ---------------------------------------------------------------- */
       /* RULES 2-4 â€” Cache check inside streaming for NDJSON consistency  */
       /* ---------------------------------------------------------------- */
@@ -854,13 +855,29 @@ export async function POST(req: NextRequest): Promise<Response> {
           message: "Extracting cached timeline matrices...",
         });
 
-        const transcript = cachedEpisode.segments
+        const rawTranscript = cachedEpisode.segments
           .map((s) => s.text)
           .join("\n\n");
         const metadata: ScrapedMetadata = {
           episodeTitle: cachedEpisode.title,
           showName: "",
         };
+
+        let transcript = rawTranscript;
+        let adFiltered = false;
+        if (filterAdsFlag) {
+          await send({
+            type: "status",
+            message: "Filtering advertisements...",
+          });
+          try {
+            const filtered = await filterAds(openai, rawTranscript, []);
+            transcript = filtered.text;
+            adFiltered = true;
+          } catch {
+            adFiltered = false;
+          }
+        }
 
         console.log(
           `[Cache] HIT for episode ${episodeId} â€” delaying 10s to mask cache behavior`
@@ -876,7 +893,7 @@ export async function POST(req: NextRequest): Promise<Response> {
             rssFeedUrl: null,
             transcript,
             segments: cachedEpisode.segments,
-            adFiltered: false,
+            adFiltered,
             executionTime: cachedEpisode.executionTime,
           },
         });
@@ -1020,7 +1037,6 @@ return; /* early exit â€” finally block handles lock cleanup */
       await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
       tmpDir = "";
 
-      const openai = createOpenRouterClient();
       let finalText = rawText;
       let adFiltered = false;
       if (filterAdsFlag) {
