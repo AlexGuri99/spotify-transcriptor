@@ -218,7 +218,7 @@ function segmentKey(seg: TranscriptSegment, i: number): string {
 
 function WorkspaceTab({ email: _email }: { email: string }) {
   const [url, setUrl] = useState("");
-  const [filterAds, setFilterAds] = useState(false);
+  const [filterAds, setFilterAds] = useState(true);
   const [showTimestamps, setShowTimestamps] = useState(true);
   const [status, setStatus] = useState<Status>({ phase: "idle" });
   const [result, setResult] = useState<TranscriptionResult | null>(null);
@@ -459,19 +459,7 @@ function WorkspaceTab({ email: _email }: { email: string }) {
                   "Transcribe"
                 )}
               </button>
-            </div>
-
-            {/* Filter ads toggle */}
-            <label className="font-sans flex items-center gap-2 text-xs text-gray-500 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={filterAds}
-                onChange={(e) => setFilterAds(e.target.checked)}
-                disabled={isLoading}
-                className="h-3.5 w-3.5 rounded border-gray-300 text-black focus:ring-black/20 cursor-pointer"
-              />
-              Filter out sponsor ads
-            </label>
+              </div>
 
             {status.phase === "processing" && (
               <div className="font-mono text-xs text-gray-400 flex items-center gap-2">
