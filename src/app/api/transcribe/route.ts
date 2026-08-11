@@ -1037,28 +1037,6 @@ return; /* early exit â€” finally block handles lock cleanup */
       await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
       tmpDir = "";
 
-      let finalText = rawText;
-      let adFiltered = false;
-      if (filterAdsFlag) {
-        await send({ type: "status", message: "Filtering advertisements..." });
-        try {
-          const filtered = await filterAds(openai, rawText, []);
-          finalText = filtered.text;
-          adFiltered = true;
-        } catch {
-          adFiltered = false;
-        }
-      }
-
-      const elapsedSeconds = ((Date.now() - startTime) / 1000).toFixed(1);
-      const estimatedCost = total * 0.000333;
-      console.log(`==================================================`);
-      console.log(`ðŸ PROCESSING COMPLETION METRICS`);
-      console.log(`â±ï¸ Total Execution Time: ${elapsedSeconds} seconds`);
-      console.log(`ðŸ“¦ Total Audio Chunks Processed: ${total}`);
-      console.log(`ðŸ’° Estimated OpenRouter Cost: $${estimatedCost.toFixed(6)}`);
-      console.log(`==================================================`);
-
       const finalSegments: TranscriptSegment[] = transcripts.map(
         (text, i) => ({
           start: i * CHUNK_DURATION_SECONDS,
@@ -1066,6 +1044,28 @@ return; /* early exit â€” finally block handles lock cleanup */
           text,
         })
       );
+
+      let finalText = rawText;
+      let adFiltered = false;
+      if (filterAdsFlag) {
+        await send({ type: "status", message: "Filtering advertisements..." });
+        try {
+          const filtered = await filterAds(openai, rawText, finalSegments);
+          finalText = filtered.text;
+          adFiltered = true;
+          if (filtered.segments.length > 0) {
+            // Replace finalSegments with the ad-filtered version
+            finalSegments.length = 0;
+            finalSegments.push(...filtered.segments);
+          }
+        } catch {
+          adFiltered = false;
+        }
+      }
+      const elapsedSeconds = ((Date.now() - startTime) / 1000).toFixed(1);
+      const estimatedCost = total * 0.000333;
+      console.log(`ðŸ’° Estimated OpenRouter Cost: $${estimatedCost.toFixed(6)}`);
+      console.log(`==================================================`);
 
       /* ---------------------------------------------------------------- */
       /* SEQUENTIAL SYNC: Save to Teable BEFORE sending the result token.  */
