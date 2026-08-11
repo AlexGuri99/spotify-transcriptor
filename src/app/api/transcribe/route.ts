@@ -1,4 +1,4 @@
-﻿import { NextRequest } from "next/server";
+import { NextRequest } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/auth";
 import * as cheerio from "cheerio";
@@ -12,7 +12,7 @@ import * as os from "os";
 import { Readable } from "stream";
 import { finished } from "stream/promises";
 import { findCachedEpisode, saveEpisodeRecord } from "@/lib/teable";
-import { getUsageStats, deductCredit, getUserData } from "@/lib/usage-tracker";
+import { getUsageStats, deductCredit, getUserData, addTranscription } from "@/lib/usage-tracker";
 
 /* ------------------------------------------------------------------ */
 /* Types                                                             */
@@ -880,9 +880,16 @@ export async function POST(req: NextRequest): Promise<Response> {
             executionTime: cachedEpisode.executionTime,
           },
         });
-
-
-      return; /* early exit â€” finally block handles lock cleanup */
+        // Add to this user's transcription history and deduct a credit for PayGo
+        addTranscription(email, {
+          id: episodeId,
+          episodeTitle: cachedEpisode.title,
+          spotifyUrl: trimmedUrl,
+          timestamp: new Date().toISOString(),
+          executionTime: cachedEpisode.executionTime,
+        }).catch(() => {});
+        await deductCredit(email);
+return; /* early exit â€” finally block handles lock cleanup */
       }
 
       /* ---------------------------------------------------------------- */
