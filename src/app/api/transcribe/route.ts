@@ -26,6 +26,7 @@ interface ScrapedMetadata {
 interface RssEpisode {
   title: string;
   enclosureUrl: string | null;
+  description?: string;
 }
 
 interface TranscriptSegment {
@@ -420,7 +421,7 @@ async function findEpisodeInFeed(feedUrl: string, episodeTitle: string, spotifyE
         const enclosureUrl = item.enclosure?.url ?? item.link ?? null;
         if (enclosureUrl) {
           console.log("-> GUID match found for episode", spotifyEpisodeId);
-          return { title: item.title ?? episodeTitle, enclosureUrl };
+          return { title: item.title ?? episodeTitle, enclosureUrl, description: item.contentSnippet ?? item.description ?? undefined };
         }
       }
     }
@@ -437,14 +438,14 @@ async function findEpisodeInFeed(feedUrl: string, episodeTitle: string, spotifyE
 
     if (sanitizedItem.includes(sanitizedTarget) || sanitizedTarget.includes(sanitizedItem)) {
       const enclosureUrl = item.enclosure?.url ?? item.link ?? null;
-      if (enclosureUrl) return { title: itemTitle, enclosureUrl };
+      if (enclosureUrl) return { title: itemTitle, enclosureUrl, description: item.contentSnippet ?? item.description ?? undefined };
     }
 
     if (targetEpNum) {
       const itemEpNum = extractEpisodeNumber(itemTitle);
       if (itemEpNum && itemEpNum === targetEpNum) {
         const enclosureUrl = item.enclosure?.url ?? item.link ?? null;
-        if (enclosureUrl) return { title: itemTitle, enclosureUrl };
+        if (enclosureUrl) return { title: itemTitle, enclosureUrl, description: item.contentSnippet ?? item.description ?? undefined };
       }
     }
 
@@ -457,7 +458,7 @@ async function findEpisodeInFeed(feedUrl: string, episodeTitle: string, spotifyE
   if (bestFallback && bestFallback.score >= 0.70) {
     const enclosureUrl = bestFallback.item.enclosure?.url ?? bestFallback.item.link ?? null;
     if (enclosureUrl) {
-      return { title: bestFallback.item.title ?? episodeTitle, enclosureUrl };
+      return { title: bestFallback.item.title ?? episodeTitle, enclosureUrl, description: bestFallback.item.contentSnippet ?? bestFallback.item.description ?? undefined };
     }
   }
 
@@ -569,7 +570,7 @@ async function transcribeChunk(chunkPath: string, chunkIndex: number, totalChunk
 }
 
 /** Pass the transcript through an LLM to strip sponsor/ad segments. */
-async function filterAds(openai: OpenAI, rawTranscript: string, segments: TranscriptSegment[]): Promise<{ text: string; segments: TranscriptSegment[] }> {
+async function filterAds(openai: OpenAI, rawTranscript: string, segments: TranscriptSegment[], description?: string): Promise<{ text: string; segments: TranscriptSegment[] }> {
   if (segments.length === 0) return { text: rawTranscript, segments };
 
   // Label segments with indices so the LLM can reference them
@@ -605,9 +606,11 @@ async function filterAds(openai: OpenAI, rawTranscript: string, segments: Transc
           "- cleaned_transcript: the full transcript with ad content removed. Do NOT rewrite or paraphrase.",
           "- first_content_index: the 0-based segment index where the actual podcast content FIRST begins. All segments before this index are pre-roll ads.",
           "- first_content_text: OPTIONAL. If the first content segment also contains the tail of an ad, set this to the exact text where content starts. Otherwise null.",
+          "",
+          "HINT: The episode show notes (provided below) list the episode's sponsors. Use this as a signal when identifying ad segments.",
         ].join("\n"),
       },
-      { role: "user", content: segmentLines },
+      { role: "user", content: (description ? `Episode show notes:\n${description}\n\n---\n\nSegments:\n${segmentLines}` : segmentLines) },
     ],
     temperature: 0.1,
     max_tokens: 4096,
@@ -958,9 +961,13 @@ export async function POST(req: NextRequest): Promise<Response> {
             message: "Filtering advertisements...",
           });
           try {
-            const filtered = await filterAds(openai, rawTranscript, []);
+            const filtered = await filterAds(openai, rawTranscript, cachedEpisode.segments);
             transcript = filtered.text;
             adFiltered = true;
+            if (filtered.segments.length > 0) {
+              cachedEpisode.segments.length = 0;
+              cachedEpisode.segments.push(...filtered.segments);
+            }
           } catch {
             adFiltered = false;
           }
@@ -1049,6 +1056,8 @@ return; /* early exit â€” finally block handles lock cleanup */
       let episodeFound = false;
 
       const directAudioUrl = rssResult.found ? rssResult.directAudioUrl : undefined;
+      let episodeDescription: string | undefined;
+
       if (directAudioUrl) {
         episodeFound = true;
         tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "st-"));
@@ -1061,6 +1070,7 @@ return; /* early exit â€” finally block handles lock cleanup */
           const episode = await findEpisodeInFeed(rssFeedUrl, metadata.episodeTitle, episodeId);
           if (episode?.enclosureUrl) {
             episodeFound = true;
+            episodeDescription = episode.description;
             tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "st-"));
             const inputPath = path.join(tmpDir, "input.mp3");
             console.log("-> Starting memory-isolated download stream to disk...");
@@ -1137,7 +1147,7 @@ return; /* early exit â€” finally block handles lock cleanup */
       if (filterAdsFlag) {
         await send({ type: "status", message: "Filtering advertisements..." });
         try {
-          const filtered = await filterAds(openai, rawText, finalSegments);
+          const filtered = await filterAds(openai, rawText, finalSegments, episodeDescription);
           finalText = filtered.text;
           adFiltered = true;
           if (filtered.segments.length > 0) {
