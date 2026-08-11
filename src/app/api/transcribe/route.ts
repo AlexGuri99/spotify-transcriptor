@@ -584,20 +584,27 @@ async function filterAds(openai: OpenAI, rawTranscript: string, segments: Transc
         role: "system",
         content: [
           "You are a podcast transcript editor. Segments are labeled with [index].",
-          "Determine which segments contain paid sponsor reads, ad reads, promo codes, or endorsements.",
-          "BE CONSERVATIVE: only flag segments that clearly contain sponsor advertisements.",
-          "Do NOT flag normal podcast content like episode titles, topic previews, or host banter.",
-          "Also find the exact point in the first content segment where the actual show starts.",
           "",
-          "Return ONLY valid JSON (no markdown, no explanation). Example:",
+          "Do TWO things:",
+          "1) Return the FULL transcript with ALL sponsor reads, ad reads, promo codes, and paid endorsements REMOVED.",
+          "2) Identify which segment contains the first line of actual podcast content.",
+          "",
+          "Rules for removing ads:",
+          "- Remove entire ad segments (sponsor reads, promo codes, paid endorsements).",
+          "- If a segment mixes ad and content, REMOVE only the ad portion and KEEP the content.",
+          "- Do NOT remove host banter, episode topic previews, or show self-promotion.",
+          "- ONLY remove segments that are clearly third-party paid advertisements.",
+          "",
+          "Return ONLY valid JSON (no markdown, no explanation):",
           JSON.stringify({
-            keep_indices: [3, 4, 5],
+            cleaned_transcript: "transcript with ads removed...",
+            first_content_index: 4,
             first_content_text: null,
           }),
           "",
-          "- keep_indices: 0-based indices of segments to KEEP. Exclude clear ad segments.",
-          "- ONLY exclude a segment if it is entirely or mostly a paid ad read.",
-          "- first_content_text: OPTIONAL. ONLY set this if the first kept segment contains a CLEAR boundary between ad and content (e.g., a promo code or 'brought to you by' followed by a topic change). Set to null if unsure.",
+          "- cleaned_transcript: the full transcript with ad content removed. Do NOT rewrite or paraphrase.",
+          "- first_content_index: the 0-based segment index where the actual podcast content FIRST begins. All segments before this index are pre-roll ads.",
+          "- first_content_text: OPTIONAL. If the first content segment also contains the tail of an ad, set this to the exact text where content starts. Otherwise null.",
         ].join("\n"),
       },
       { role: "user", content: segmentLines },
@@ -609,56 +616,54 @@ async function filterAds(openai: OpenAI, rawTranscript: string, segments: Transc
   const raw = response.choices?.[0]?.message?.content?.trim();
   if (!raw) return { text: rawTranscript, segments };
 
-  // Strategy 1: parse structured JSON from the LLM
-  const jsonResult = tryParseFilterJson(raw, segments);
-  if (jsonResult) return jsonResult;
-
-  // Strategy 2: fallback — word-overlap scoring
-  return filterByOverlap(raw, rawTranscript, segments);
-}
-
-/** Attempt to parse structured JSON from the LLM response. */
-function tryParseFilterJson(
-  raw: string,
-  segments: TranscriptSegment[]
-): { text: string; segments: TranscriptSegment[] } | null {
+  // Try to parse structured JSON
   let parsed: any;
   try {
-    // Strip markdown fences if present
     const json = raw.replace(/^```(?:json)?\s*/, "").replace(/\s*```$/, "");
     parsed = JSON.parse(json);
   } catch {
-    return null;
+    // Fallback: use raw LLM text with overlap scoring
+    return filterByOverlap(raw, rawTranscript, segments);
   }
 
-  const keep: number[] = parsed?.keep_indices;
-  if (!Array.isArray(keep) || keep.length === 0) return null;
+  const cleanedTranscript: string | undefined = parsed?.cleaned_transcript;
+  if (!cleanedTranscript || cleanedTranscript.length < 10) return { text: rawTranscript, segments };
 
-  const keepSet = new Set(keep);
-  let kept = segments.filter((_, i) => keepSet.has(i));
-  if (kept.length === 0) return null;
+  // Filter segments by word-overlap against the cleaned transcript
+  const keptSegments = filterSegmentsByOverlap(segments, cleanedTranscript);
 
-  // Trim the boundary segment if the LLM told us where content starts
-  const firstContentText: string | undefined = parsed.first_content_text;
-  const firstKeptIdx = Math.min(...keep);
-  const boundarySeg = segments[firstKeptIdx];
-  if (firstContentText && typeof firstContentText === "string" && firstContentText.length > 10) {
-    const startPos = boundarySeg.text.indexOf(firstContentText);
-    if (startPos > 0) {
-      kept[0] = { ...boundarySeg, text: boundarySeg.text.slice(startPos) };
+  // Handle the beginning: trim pre-roll ads and boundary
+  const firstContentIndex: number | undefined = parsed.first_content_index;
+  if (typeof firstContentIndex === "number" && firstContentIndex > 0 && firstContentIndex < segments.length) {
+    const boundaryIdx = keptSegments.findIndex(s => {
+      const origIdx = segments.indexOf(s);
+      return origIdx >= firstContentIndex;
+    });
+
+    if (boundaryIdx > 0) {
+      keptSegments.splice(0, boundaryIdx);
     }
   }
 
-  const text = kept.map((s) => s.text).join("\n\n");
-  return { text, segments: kept };
+  // Trim boundary segment text if needed
+  const firstContentText: string | undefined = parsed.first_content_text;
+  if (firstContentText && typeof firstContentText === "string" && firstContentText.length > 10 && keptSegments.length > 0) {
+    const startPos = keptSegments[0].text.indexOf(firstContentText);
+    if (startPos > 0) {
+      keptSegments[0] = { ...keptSegments[0], text: keptSegments[0].text.slice(startPos) };
+    }
+  }
+
+  if (keptSegments.length === 0) return { text: cleanedTranscript, segments };
+  const text = keptSegments.map((s) => s.text).join("\n\n");
+  return { text, segments: keptSegments };
 }
 
-/** Fallback: keep segments whose words substantially overlap with the LLM-cleaned text. */
-function filterByOverlap(
-  cleaned: string,
-  rawTranscript: string,
-  segments: TranscriptSegment[]
-): { text: string; segments: TranscriptSegment[] } {
+/** Keep segments whose words substantially overlap with the LLM-cleaned text. */
+function filterSegmentsByOverlap(
+  segments: TranscriptSegment[],
+  cleaned: string
+): TranscriptSegment[] {
   const cleanedLower = cleaned.toLowerCase();
 
   function overlapRatio(segText: string): number {
@@ -671,13 +676,20 @@ function filterByOverlap(
     return matched / words.length;
   }
 
-  const keptSegments = segments.filter((seg) => overlapRatio(seg.text) >= 0.5);
-  if (keptSegments.length === 0) return { text: rawTranscript, segments };
+  return segments.filter((seg) => overlapRatio(seg.text) >= 0.4);
+}
 
+/** Fallback: keep segments whose words substantially overlap with raw LLM text. */
+function filterByOverlap(
+  cleaned: string,
+  rawTranscript: string,
+  segments: TranscriptSegment[]
+): { text: string; segments: TranscriptSegment[] } {
+  const keptSegments = filterSegmentsByOverlap(segments, cleaned);
+  if (keptSegments.length === 0) return { text: rawTranscript, segments };
   const text = keptSegments.map((s) => s.text).join("\n\n");
   return { text, segments: keptSegments };
 }
-
 /* ------------------------------------------------------------------ */
 /* Apple Podcasts resolution â€” iTunes lookup â†’ direct audio URL       */
 /* ------------------------------------------------------------------ */
