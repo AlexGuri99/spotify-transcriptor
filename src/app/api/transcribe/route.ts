@@ -609,6 +609,45 @@ async function transcribeChunk(chunkPath: string, chunkIndex: number, totalChunk
   return `[âš ï¸ Audio segment unavailable â€” ${label}]`;
 }
 
+/** Pattern-based ad detection — catch obvious ads without LLM cost. */
+const AD_PATTERNS = [
+  /\bbrought\s+to\s+you\s+by\b/i,
+  /\bsponsored\s+by\b/i,
+  /\bthis\s+episode\s+is?\s+(?:brought|sponsored)/i,
+  /\b(?:use|enter)\s+code\b/i,
+  /\bpromo\s*code\b/i,
+  /\bdiscount\s+code\b/i,
+  /\bapply\s+for\b.*\b(?:card|credit)\b/i,
+  /\bfind\s+out\s+more\s+at\b/i,
+  /\blearn\s+more\s+at\b/i,
+  /\bsign\s+up\s+(?:at|today|now)\b/i,
+  /\bdownload\s+(?:the\s+)?(?:our\s+)?app\b/i,
+  /\bget\s+\$[\d.]+\s+(?:when|off|back|in)\b/i,
+  /\bfor\s+a\s+limited\s+time\b/i,
+  /\bterms?\s+(?:and|&)\s+conditions?\s+apply\b/i,
+  /\b(?:18|21)\s*\+\s*(?:only\s+)?(?:and\s+)?restrictions?\b/i,
+  /\btext\s+\w+\s+to\s+[\d]+\b/i,
+  /\btrade\s+the\s+beautiful\s+game\b/i,
+  /\b(?:this\s+)?message\s+is?\s+brought\s+to\s+you\b/i,
+  /\bthanks?\s+to\s+our\s+sponsor\b/i,
+  /\boffer\s+ends\s+\w+\s+\d+/i,
+];
+
+function segmentMatchesAdPattern(text: string): boolean {
+  return AD_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+/**
+ * Rule-based pre-filter: remove segments that match known ad patterns.
+ * Returns the segments and text with obvious ads stripped out.
+ */
+function filterAdsByPattern(
+  segments: TranscriptSegment[]
+): { kept: TranscriptSegment[]; removed: number } {
+  const kept = segments.filter((seg) => !segmentMatchesAdPattern(seg.text));
+  return { kept, removed: segments.length - kept.length };
+}
+
 /** Pass the transcript through an LLM to strip sponsor/ad segments. */
 async function filterAds(openai: OpenAI, rawTranscript: string, segments: TranscriptSegment[], description?: string): Promise<{ text: string; segments: TranscriptSegment[] }> {
   if (segments.length === 0) return { text: rawTranscript, segments };
@@ -1203,17 +1242,38 @@ return; /* early exit â€” finally block handles lock cleanup */
       let adFiltered = false;
       if (filterAdsFlag) {
         await send({ type: "status", message: "Filtering advertisements..." });
-        try {
-          const filtered = await filterAds(openai, rawText, finalSegments, episodeDescription);
-          finalText = filtered.text;
+
+        // Stage 1: Rule-based pre-filter — catches obvious ads (promo codes, etc.)
+        const { kept, removed } = filterAdsByPattern(finalSegments);
+        if (removed > 0) {
+          console.log(`-> Pattern filter removed ${removed} ad segment(s)`);
+        }
+
+        // Stage 2: LLM filter on remaining segments for harder cases
+        if (kept.length === 0) {
+          // Pattern filter caught everything — no LLM needed
+          finalSegments.length = 0;
+          finalText = "";
           adFiltered = true;
-          if (filtered.segments.length > 0) {
-            // Replace finalSegments with the ad-filtered version
-            finalSegments.length = 0;
-            finalSegments.push(...filtered.segments);
+        } else {
+          try {
+            const remainingText = kept.map((s) => s.text).join("\n\n");
+            const filtered = await filterAds(openai, remainingText, kept, episodeDescription);
+            finalText = filtered.text;
+            adFiltered = true;
+            if (filtered.segments.length > 0) {
+              finalSegments.length = 0;
+              finalSegments.push(...filtered.segments);
+            }
+          } catch {
+            // LLM failed — keep the pattern-filtered result as fallback
+            if (removed > 0) {
+              finalSegments.length = 0;
+              finalSegments.push(...kept);
+              finalText = kept.map((s) => s.text).join("\n\n");
+              adFiltered = true;
+            }
           }
-        } catch {
-          adFiltered = false;
         }
       }
       const elapsedSeconds = ((Date.now() - startTime) / 1000).toFixed(1);
