@@ -494,35 +494,69 @@ function getAudioDuration(filePath: string): Promise<number> {
   });
 }
 
-/** Split an audio file path into 30s MP3 fragments directly on disk via native system ffmpeg binaries */
-async function splitAudioIntoChunksOnDisk(inputPath: string, tmpDir: string): Promise<string[]> {
-  return new Promise<string[]>((resolve, reject) => {
-    const outputPattern = path.join(tmpDir, "chunk_%03d.mp3");
+interface ChunkInfo {
+  path: string;
+  startTime: number;
+  duration: number;
+}
 
-    ffmpeg(inputPath)
-      .outputOptions([
-        "-f", "segment",
-        "-segment_time", String(CHUNK_DURATION_SECONDS),
-        "-reset_timestamps", "1",
-        "-c", "copy",
-        "-map", "0:a",
-      ])
-      .output(outputPattern)
-      .on("end", async () => {
-        try {
-          const files = await fs.readdir(tmpDir);
-          const chunkFiles = files.filter((f) => f.startsWith("chunk_")).sort();
-          resolve(chunkFiles.map((f) => path.join(tmpDir, f)));
-        } catch (err) {
-          reject(err);
-        }
-      })
-      .on("error", (err) => {
-        fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
-        reject(err);
-      })
-      .run();
-  });
+/** Split audio: first 2 min into 10s chunks for fine-grained ad detection, rest into 30s chunks. */
+async function splitAudioIntoChunksOnDisk(inputPath: string, tmpDir: string, totalDuration: number): Promise<ChunkInfo[]> {
+  const chunks: ChunkInfo[] = [];
+  const fineDuration = 10;
+  const coarseDuration = 30;
+  const fineSpan = Math.min(120, totalDuration);
+
+  // Split first 2 minutes into 10-second fine-grained chunks
+  for (let start = 0; start < fineSpan; start += fineDuration) {
+    const outputPath = path.join(tmpDir, `fine_${String(chunks.length).padStart(3, "0")}.mp3`);
+    await new Promise<void>((resolve, reject) => {
+      ffmpeg(inputPath)
+        .seekInput(start)
+        .duration(fineDuration)
+        .outputOptions(["-c", "copy", "-map", "0:a"])
+        .output(outputPath)
+        .on("end", () => {
+          chunks.push({ path: outputPath, startTime: start, duration: fineDuration });
+          resolve();
+        })
+        .on("error", reject)
+        .run();
+    });
+  }
+
+  // Split the rest (after 2 min) into 30-second coarse chunks
+  if (totalDuration > fineSpan) {
+    const outputPattern = path.join(tmpDir, "coarse_%03d.mp3");
+    await new Promise<void>((resolve, reject) => {
+      ffmpeg(inputPath)
+        .seekInput(fineSpan)
+        .outputOptions([
+          "-f", "segment",
+          "-segment_time", String(coarseDuration),
+          "-reset_timestamps", "1",
+          "-c", "copy",
+          "-map", "0:a",
+        ])
+        .output(outputPattern)
+        .on("end", () => resolve())
+        .on("error", reject)
+        .run();
+    });
+
+    const files = await fs.readdir(tmpDir);
+    const restChunks = files.filter((f) => f.startsWith("coarse_")).sort();
+    for (let i = 0; i < restChunks.length; i++) {
+      const startTime = fineSpan + i * coarseDuration;
+      chunks.push({
+        path: path.join(tmpDir, restChunks[i]),
+        startTime,
+        duration: Math.min(coarseDuration, totalDuration - startTime),
+      });
+    }
+  }
+
+  return chunks;
 }
 
 /** Transcribe a single chunk with retry; returns the text or a warning marker. */
@@ -1112,19 +1146,19 @@ return; /* early exit â€” finally block handles lock cleanup */
       // --- Steps D-F: split, transcribe, filter (shared with Apple path) ---
       await send({ type: "status", message: "Processing audio segments..." });
       console.log("-> Splitting file segments directly via system execution binaries...");
-      const chunkPaths = await splitAudioIntoChunksOnDisk(inputPath, tmpDir);
-      const total = chunkPaths.length;
+      const chunkInfos = await splitAudioIntoChunksOnDisk(inputPath, tmpDir, duration);
+      const total = chunkInfos.length;
       console.log(`-> Architecture split mapped into ${total} isolated segments`);
       await send({ type: "chunks", count: total });
 
       const transcripts: string[] = new Array(total);
       for (let i = 0; i < total; i += MAX_CONCURRENT_TRANSCRIBERS) {
-        const slice = chunkPaths.slice(i, i + MAX_CONCURRENT_TRANSCRIBERS);
+        const slice = chunkInfos.slice(i, i + MAX_CONCURRENT_TRANSCRIBERS);
         await Promise.all(
-          slice.map(async (chunkPath, sliceIndex) => {
+          slice.map(async (chunkInfo, sliceIndex) => {
             const globalIndex = i + sliceIndex;
             console.log(`-> Spinning worker payload channel for segment index: ${globalIndex + 1}/${total}`);
-            transcripts[globalIndex] = await transcribeChunk(chunkPath, globalIndex + 1, total);
+            transcripts[globalIndex] = await transcribeChunk(chunkInfo.path, globalIndex + 1, total);
           })
         );
       }
@@ -1136,8 +1170,8 @@ return; /* early exit â€” finally block handles lock cleanup */
 
       const finalSegments: TranscriptSegment[] = transcripts.map(
         (text, i) => ({
-          start: i * CHUNK_DURATION_SECONDS,
-          end: (i + 1) * CHUNK_DURATION_SECONDS,
+          start: chunkInfos[i].startTime,
+          end: chunkInfos[i].startTime + chunkInfos[i].duration,
           text,
         })
       );
