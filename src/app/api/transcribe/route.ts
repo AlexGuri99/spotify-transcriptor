@@ -402,33 +402,6 @@ function wordOverlapRatio(a: string, b: string): number {
  * Priority: directAudioUrl > found:true > any result.
  * Tie-breaks by show-name overlap when both have equivalent quality.
  */
-function pickBestResult(a: RssFeedResult, b: RssFeedResult, showName?: string): RssFeedResult {
-  function score(r: RssFeedResult): number {
-    if (r.found && r.directAudioUrl) return 3;
-    if (r.found) return 2;
-    return 1;
-  }
-
-  const scoreA = score(a);
-  const scoreB = score(b);
-
-  if (scoreA !== scoreB) return scoreA > scoreB ? a : b;
-
-  // Tie: prefer better show-name overlap
-  if (scoreA >= 2 && showName) {
-    const aTitle = a.found ? sanitizeTitle(a.feedTitle) : "";
-    const bTitle = b.found ? sanitizeTitle(b.feedTitle) : "";
-    const showClean = sanitizeTitle(showName);
-    const aOverlap = showClean ? wordOverlapRatio(showClean, aTitle) : 0;
-    const bOverlap = showClean ? wordOverlapRatio(showClean, bTitle) : 0;
-    if (aOverlap !== bOverlap) return aOverlap > bOverlap ? a : b;
-  }
-
-  // Still tied: Podcast Index result (fewer downstream steps since it
-  // already resolved enclosureUrl, equivalent to directAudioUrl)
-  return b;
-}
-
 /** Parse the RSS XML and locate the episode with a matching title or GUID. */
 async function findEpisodeInFeed(feedUrl: string, episodeTitle: string, spotifyEpisodeId?: string): Promise<RssEpisode | null> {
   const parser = new Parser({
@@ -1121,7 +1094,7 @@ return; /* early exit â€” finally block handles lock cleanup */
         ? piResult.value
         : { found: false as const, reason: "no-match" as const };
 
-      rssResult = pickBestResult(itunesRss, piRss, metadata.showName);
+      rssResult = piRss.found ? piRss : itunesRss;
 
       if (rssResult.found) {
         rssFeedUrl = rssResult.feedUrl || null;
