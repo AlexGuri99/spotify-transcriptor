@@ -1012,6 +1012,20 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const executionPromise = (async () => {
     let tmpDir = "";
+
+    // Capture all console output during the pipeline for the logs field
+    const logBuffer: string[] = [];
+    const originalLog = console.log;
+    const originalError = console.error;
+    console.log = (...args: any[]) => {
+      logBuffer.push(args.map((a) => typeof a === "string" ? a : JSON.stringify(a)).join(" "));
+      originalLog.apply(console, args);
+    };
+    console.error = (...args: any[]) => {
+      logBuffer.push("[ERROR] " + args.map((a) => typeof a === "string" ? a : JSON.stringify(a)).join(" "));
+      originalError.apply(console, args);
+    };
+
     try {
       const openai = createOpenRouterClient();
       /* ---------------------------------------------------------------- */
@@ -1237,14 +1251,19 @@ return; /* early exit â€” finally block handles lock cleanup */
           text,
         })
       );
+      const originalSegmentCount = finalSegments.length;
 
       let finalText = rawText;
       let adFiltered = false;
+      let kept: TranscriptSegment[] = [];
+      let removed = 0;
       if (filterAdsFlag) {
         await send({ type: "status", message: "Filtering advertisements..." });
 
         // Stage 1: Rule-based pre-filter — catches obvious ads (promo codes, etc.)
-        const { kept, removed } = filterAdsByPattern(finalSegments);
+        const result = filterAdsByPattern(finalSegments);
+        kept = result.kept;
+        removed = result.removed;
         if (removed > 0) {
           console.log(`-> Pattern filter removed ${removed} ad segment(s)`);
         }
@@ -1294,6 +1313,17 @@ return; /* early exit â€” finally block handles lock cleanup */
         executionTime: Number(elapsedSeconds),
         email: session?.user?.email ?? undefined,
         timestamp: new Date().toISOString(),
+        logs: {
+          source: rssResult?.found ? (rssResult.directAudioUrl ? "direct-audio" : "rss-parse") : "none",
+          audioUrl: rssResult?.found ? rssResult.directAudioUrl || rssFeedUrl : null,
+          chunkCount: chunkInfos?.length ?? null,
+          audioDuration: duration ? Math.round(duration) : null,
+          adFilterStage: !filterAdsFlag ? "disabled" : (typeof removed === "number" && kept?.length === 0 ? "pattern-only" : adFiltered ? "pattern+llm" : "llm-failed"),
+          segmentsRemovedByPattern: typeof removed === "number" ? removed : 0,
+          segmentsAfterFilter: finalSegments.length,
+          segmentsBeforeFilter: originalSegmentCount,
+          console: logBuffer.join("\n"),
+        },
       });
 
       // Deduct a credit for PayGo users
@@ -1317,8 +1347,11 @@ return; /* early exit â€” finally block handles lock cleanup */
         await send({ type: "error", error: err?.message ?? "An unexpected error occurred." });
       } catch { /* writer may already be closed */ }
     } finally {
+      // Restore original console methods
+      console.log = originalLog;
+      console.error = originalError;
       if (tmpDir) await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
-      /* RULE 5 â€” Release the processing lock so future requests can proceed */
+      /* RULE 5 — Release the processing lock so future requests can proceed */
       inProgressEpisodeIds.delete(episodeId);
       console.log(`[Lock] Released for episode ${episodeId}`);
       try { await writer.close(); } catch { /* stream already closed */ }

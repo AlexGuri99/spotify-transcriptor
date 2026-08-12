@@ -190,6 +190,7 @@ export async function saveEpisodeRecord(params: {
   executionTime: number;
   email?: string;
   timestamp?: string;
+  logs?: Record<string, unknown>;
 }): Promise<void> {
   console.log("📦 [Teable Save Attempt] Preparing payload structure for:", {
     episodeId: params.episodeId,
@@ -220,6 +221,7 @@ export async function saveEpisodeRecord(params: {
 
   if (params.email) fields.email = params.email.toLowerCase().trim();
   if (params.timestamp) fields.timestamp = params.timestamp;
+  if (params.logs) fields.logs = JSON.stringify(params.logs);
 
   const payload = {
     records: [{ fields }],
