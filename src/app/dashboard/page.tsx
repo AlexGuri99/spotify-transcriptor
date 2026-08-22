@@ -680,31 +680,33 @@ function WorkspaceTab({ email: _email }: { email: string }) {
                           </span>
                           <span className="font-sans text-xs text-gray-400">{item.executionTime.toFixed(1)}s</span>
                         </div>
-                        <code className="font-mono text-[10px] text-gray-300 mt-1.5 inline-block">{item.id}</code>
                       </>
                     )}
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex flex-col items-end gap-2 shrink-0">
                     {item.pending ? (
                       <span className="font-sans text-xs text-gray-300 italic px-2">Transcribing...</span>
                     ) : (
                       <>
-                        <button
-                          onClick={() => openTranscript(item.id)}
-                          className="font-sans shrink-0 rounded-xl border border-gray-200 p-2.5 text-gray-400 hover:border-black hover:text-black transition-all cursor-pointer"
-                          title="View transcript"
-                        >
-                          <FileText className="h-4 w-4" />
-                        </button>
-                        <a
-                          href={item.spotifyUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="font-sans shrink-0 rounded-xl border border-gray-200 p-2.5 text-gray-400 hover:border-black hover:text-black transition-all"
-                          title="Open in Spotify"
-                        >
-                          <ExternalLink className="h-4 w-4" />
-                        </a>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => openTranscript(item.id)}
+                            className="font-sans shrink-0 rounded-xl border border-gray-200 p-2.5 text-gray-400 hover:border-black hover:text-black transition-all cursor-pointer"
+                            title="View transcript"
+                          >
+                            <FileText className="h-4 w-4" />
+                          </button>
+                          <a
+                            href={item.spotifyUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="font-sans shrink-0 rounded-xl border border-gray-200 p-2.5 text-gray-400 hover:border-black hover:text-black transition-all"
+                            title="Open in Spotify"
+                          >
+                            <ExternalLink className="h-4 w-4" />
+                          </a>
+                        </div>
+                        <code className="font-mono text-[10px] text-gray-300">{item.id}</code>
                       </>
                     )}
                   </div>
