@@ -318,8 +318,27 @@ function WorkspaceTab({ email: _email }: { email: string }) {
     };
     setHistory((prev) => [pendingEntry, ...prev]);
 
+    let pollInterval: ReturnType<typeof setInterval> | null = null;
     let countdownInterval: ReturnType<typeof setInterval> | null = null;
     let gotResult = false;
+
+    // Poll /api/v1/transcripts/:id while pending
+    pollInterval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/transcript/${pendingId}`);
+        if (res.ok) {
+          const data = await res.json();
+          clearInterval(pollInterval!);
+          setHistory((prev) =>
+            prev.map((h) =>
+              h.id === pendingId
+                ? { ...h, pending: false, episodeTitle: data.title ?? h.episodeTitle, executionTime: data.executionTime ?? 0 }
+                : h
+            )
+          );
+        }
+      } catch {}
+    }, 5000);
 
     try {
       const res = await fetch("/api/transcribe", {
@@ -337,6 +356,7 @@ function WorkspaceTab({ email: _email }: { email: string }) {
           if (errBody.detail) errorDetail = errBody.detail;
         } catch {}
         if (countdownInterval) clearInterval(countdownInterval);
+        if (pollInterval) clearInterval(pollInterval);
         setStatus({ phase: "error", error: errorMsg, detail: errorDetail });
         setHistory((prev) => prev.filter((h) => h.pending !== true));
         return;
@@ -379,6 +399,7 @@ function WorkspaceTab({ email: _email }: { email: string }) {
             } else if (parsed.type === "result") {
               gotResult = true;
               if (countdownInterval) clearInterval(countdownInterval);
+              if (pollInterval) clearInterval(pollInterval);
               setResult(parsed.data as TranscriptionResult);
               setStatus({ phase: "done" });
               // Refresh stats & history
@@ -405,11 +426,13 @@ function WorkspaceTab({ email: _email }: { email: string }) {
       }
       if (!gotResult) {
         if (countdownInterval) clearInterval(countdownInterval);
+        if (pollInterval) clearInterval(pollInterval);
         setStatus({ phase: "error", error: "Connection closed before transcription completed." });
         setHistory((prev) => prev.filter((h) => h.pending !== true));
       }
     } catch (err: any) {
       if (countdownInterval) clearInterval(countdownInterval);
+      if (pollInterval) clearInterval(pollInterval);
       setStatus({ phase: "error", error: err?.message ?? "Network error — is the server running?" });
       setHistory((prev) => prev.filter((h) => h.pending !== true));
     }
