@@ -680,6 +680,7 @@ function WorkspaceTab({ email: _email }: { email: string }) {
                           </span>
                           <span className="font-sans text-xs text-gray-400">{item.executionTime.toFixed(1)}s</span>
                         </div>
+                        <code className="font-mono text-[10px] text-gray-300 mt-1.5 inline-block">{item.id}</code>
                       </>
                     )}
                   </div>
