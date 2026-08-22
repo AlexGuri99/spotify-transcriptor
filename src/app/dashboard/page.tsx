@@ -18,7 +18,6 @@ import {
   Zap,
   FileText,
   Sparkles,
-  Eye,
   X,
   KeyRound,
   Copy,
@@ -769,7 +768,7 @@ function ApiTab({ email: _email }: { email: string }) {
   const [curlCopied, setCurlCopied] = useState(false);
 
   useEffect(() => {
-    fetch("/api/v1/keys")
+    fetch("/api/keys")
       .then((r) => r.json())
       .then((data) => {
         setKeys(data.api_keys ?? []);
@@ -783,7 +782,7 @@ function ApiTab({ email: _email }: { email: string }) {
     setError("");
     setCreating(true);
     try {
-      const res = await fetch("/api/v1/keys", {
+      const res = await fetch("/api/keys", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: keyName.trim() || "Default" }),
@@ -805,7 +804,7 @@ function ApiTab({ email: _email }: { email: string }) {
 
   async function handleRevoke(keyId: string) {
     try {
-      const res = await fetch(`/api/v1/keys/${keyId}`, { method: "DELETE" });
+      const res = await fetch(`/api/keys/${keyId}`, { method: "DELETE" });
       if (res.ok) setKeys((prev) => prev.filter((k) => k.key_id !== keyId));
     } catch {}
   }
@@ -965,14 +964,11 @@ function ApiTab({ email: _email }: { email: string }) {
                 </div>
               </div>
               <div className="relative">
-                <pre className="font-mono rounded-lg bg-gray-900 p-4 text-xs text-green-300 leading-relaxed overflow-x-auto">{`curl -X POST https://tranzkript.com/api/v1/transcribe \\
-  -H "Authorization: Bearer sk_tzk_YOUR_KEY" \\
-  -H "Content-Type: application/json" \\
-  -d '{"url": "https://open.spotify.com/episode/ID", "filter_ads": true}'`}</pre>
+                <pre className="font-mono rounded-lg bg-gray-900 p-4 text-xs text-green-300 leading-relaxed overflow-x-auto">{`curl -X POST https://tranzkript.com/api/v1/transcribe -H "Authorization: Bearer sk_tzk_YOUR_KEY" -H "Content-Type: application/json" -d '{"url": "https://open.spotify.com/episode/ID", "filter_ads": true}'`}</pre>
                 <button
                   onClick={async () => {
                     try {
-                      await navigator.clipboard.writeText('curl -X POST https://tranzkript.com/api/v1/transcribe \\\n  -H "Authorization: Bearer sk_tzk_YOUR_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d \'{"url": "https://open.spotify.com/episode/ID", "filter_ads": true}\'');
+                      await navigator.clipboard.writeText('curl -X POST https://tranzkript.com/api/v1/transcribe -H "Authorization: Bearer sk_tzk_YOUR_KEY" -H "Content-Type: application/json" -d \'{"url": "https://open.spotify.com/episode/ID", "filter_ads": true}\'');
                       setCurlCopied(true);
                       setTimeout(() => setCurlCopied(false), 2000);
                     } catch {}
@@ -1010,12 +1006,11 @@ function ApiTab({ email: _email }: { email: string }) {
                 </div>
               </div>
               <div className="relative">
-                <pre className="font-mono rounded-lg bg-gray-900 p-4 text-xs text-green-300 leading-relaxed overflow-x-auto">{`curl https://tranzkript.com/api/v1/transcripts/EPISODE_ID \\
-  -H "Authorization: Bearer sk_tzk_YOUR_KEY"`}</pre>
+                <pre className="font-mono rounded-lg bg-gray-900 p-4 text-xs text-green-300 leading-relaxed overflow-x-auto">{`curl https://tranzkript.com/api/v1/transcripts/EPISODE_ID -H "Authorization: Bearer sk_tzk_YOUR_KEY"`}</pre>
                 <button
                   onClick={async () => {
                     try {
-                      await navigator.clipboard.writeText('curl https://tranzkript.com/api/v1/transcripts/EPISODE_ID \\\n  -H "Authorization: Bearer sk_tzk_YOUR_KEY"');
+                      await navigator.clipboard.writeText('curl https://tranzkript.com/api/v1/transcripts/EPISODE_ID -H "Authorization: Bearer sk_tzk_YOUR_KEY"');
                       setCurlCopied(true);
                       setTimeout(() => setCurlCopied(false), 2000);
                     } catch {}
@@ -1045,12 +1040,11 @@ function ApiTab({ email: _email }: { email: string }) {
             </summary>
             <div className="px-5 pb-5 border-t border-gray-100 pt-4">
               <div className="relative">
-                <pre className="font-mono rounded-lg bg-gray-900 p-4 text-xs text-green-300 leading-relaxed overflow-x-auto">{`curl https://tranzkript.com/api/v1/me \\
-  -H "Authorization: Bearer sk_tzk_YOUR_KEY"`}</pre>
+                <pre className="font-mono rounded-lg bg-gray-900 p-4 text-xs text-green-300 leading-relaxed overflow-x-auto">{`curl https://tranzkript.com/api/v1/me -H "Authorization: Bearer sk_tzk_YOUR_KEY"`}</pre>
                 <button
                   onClick={async () => {
                     try {
-                      await navigator.clipboard.writeText('curl https://tranzkript.com/api/v1/me \\\n  -H "Authorization: Bearer sk_tzk_YOUR_KEY"');
+                      await navigator.clipboard.writeText('curl https://tranzkript.com/api/v1/me -H "Authorization: Bearer sk_tzk_YOUR_KEY"');
                       setCurlCopied(true);
                       setTimeout(() => setCurlCopied(false), 2000);
                     } catch {}
@@ -1074,7 +1068,7 @@ function ApiTab({ email: _email }: { email: string }) {
             <summary className="flex items-center justify-between px-5 py-3.5 cursor-pointer list-none">
               <div className="flex items-center gap-3">
                 <span className="font-mono text-[11px] font-bold text-blue-700 bg-blue-100 px-1.5 py-0.5 rounded">AUTH</span>
-                <code className="font-mono text-sm text-gray-800 font-medium">{'/api/v1/keys'}</code>
+                <code className="font-mono text-sm text-gray-800 font-medium">{'/api/keys'}</code>
               </div>
               <span className="font-sans text-xs text-gray-400 group-open:text-black transition-colors">Manage API keys (web session only)</span>
             </summary>
@@ -1086,21 +1080,21 @@ function ApiTab({ email: _email }: { email: string }) {
                 <div className="rounded-lg bg-gray-100/80 px-4 py-2.5">
                   <div className="flex items-center gap-2 mb-1">
                     <span className="font-mono text-[11px] font-bold text-white bg-blue-600 px-1.5 py-0.5 rounded">POST</span>
-                    <code className="font-mono text-xs text-gray-700">{'/api/v1/keys'}</code>
+                    <code className="font-mono text-xs text-gray-700">{'/api/keys'}</code>
                   </div>
                   <p className="font-sans text-xs text-gray-500">Body: <code className="font-mono text-xs">{'{"name": "My Key"}'}</code> → returns the full key (shown once)</p>
                 </div>
                 <div className="rounded-lg bg-gray-100/80 px-4 py-2.5">
                   <div className="flex items-center gap-2 mb-1">
                     <span className="font-mono text-[11px] font-bold text-green-700 bg-green-100 px-1.5 py-0.5 rounded">GET</span>
-                    <code className="font-mono text-xs text-gray-700">{'/api/v1/keys'}</code>
+                    <code className="font-mono text-xs text-gray-700">{'/api/keys'}</code>
                   </div>
                   <p className="font-sans text-xs text-gray-500">Lists all keys (masked)</p>
                 </div>
                 <div className="rounded-lg bg-gray-100/80 px-4 py-2.5">
                   <div className="flex items-center gap-2 mb-1">
                     <span className="font-mono text-[11px] font-bold text-red-600 bg-red-100 px-1.5 py-0.5 rounded">DELETE</span>
-                    <code className="font-mono text-xs text-gray-700">{'/api/v1/keys/:key_id'}</code>
+                    <code className="font-mono text-xs text-gray-700">{'/api/keys/:key_id'}</code>
                   </div>
                   <p className="font-sans text-xs text-gray-500">Revokes a key permanently</p>
                 </div>

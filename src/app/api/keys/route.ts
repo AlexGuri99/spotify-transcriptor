@@ -4,14 +4,10 @@ import { authOptions } from "@/auth";
 import { generateApiKey, maskKey } from "@/lib/api-keys";
 import { getApiKeys, addApiKey } from "@/lib/usage-tracker";
 
-/* ------------------------------------------------------------------ */
-/* POST /api/v1/keys — create a new API key                          */
-/* ------------------------------------------------------------------ */
-
 export async function POST(req: NextRequest): Promise<Response> {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) {
-    return NextResponse.json({ error: "Unauthorized. Sign in via the web UI first." }, { status: 401 });
+    return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
 
   let body: { name?: string };
@@ -22,7 +18,6 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   const name = body.name?.trim() || "Default";
-
   const { plaintext, entry } = generateApiKey(name);
   await addApiKey(session.user.email, entry);
 
@@ -34,10 +29,6 @@ export async function POST(req: NextRequest): Promise<Response> {
     created_at: entry.createdAt,
   }, { status: 201 });
 }
-
-/* ------------------------------------------------------------------ */
-/* GET /api/v1/keys — list API keys (masked, no secrets)              */
-/* ------------------------------------------------------------------ */
 
 export async function GET(): Promise<Response> {
   const session = await getServerSession(authOptions);
