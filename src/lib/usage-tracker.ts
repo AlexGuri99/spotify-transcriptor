@@ -5,6 +5,8 @@
 /* Transcripts table: email, spotify_episode_id, execution_time, episodeTitle, segments */
 /* ------------------------------------------------------------------ */
 
+import { ApiKeyEntry, hashApiKey, parseKeyId } from "./api-keys";
+
 /* ------------------------------------------------------------------ */
 /* Types                                                              */
 /* ------------------------------------------------------------------ */
@@ -23,6 +25,7 @@ export interface UserData {
   plan: "free" | "credits" | "pro";
   creditsRemaining: number;
   provider: "credentials" | "google" | "github" | "";
+  apiKeys?: ApiKeyEntry[];
 }
 
 /* ------------------------------------------------------------------ */
@@ -156,12 +159,19 @@ export async function getUserData(email: string): Promise<UserData> {
 
   const record = await findRecordByEmail(TEABLE_USERS_TABLE_ID, email);
   if (record) {
+    let apiKeys: ApiKeyEntry[] | undefined;
+    try {
+      const raw = record.fields.api_keys as string | undefined;
+      if (raw) apiKeys = JSON.parse(raw);
+    } catch { /* ignore parse errors */ }
+
     return {
       email: (record.fields.email as string) ?? email.toLowerCase(),
       passwordHash: (record.fields.passwordHash as string) ?? undefined,
       plan: (record.fields.plan as "free" | "credits" | "pro") ?? "free",
       creditsRemaining: (record.fields.creditsRemaining as number) ?? 0,
       provider: (record.fields.provider as "credentials" | "google" | "github" | "") ?? "",
+      apiKeys,
     };
   }
 
@@ -433,4 +443,194 @@ async function getTranscriptRecords(email: string): Promise<TranscriptionRecord[
     timestamp: r.fields.timestamp ?? r.createdTime ?? new Date().toISOString(),
     executionTime: r.fields.execution_time ?? 0,
   }));
+}
+
+/* ------------------------------------------------------------------ */
+/* Public API — API Keys                                              */
+/* ------------------------------------------------------------------ */
+
+export async function getApiKeys(email: string): Promise<ApiKeyEntry[]> {
+  const user = await getUserData(email);
+  return user.apiKeys ?? [];
+}
+
+/**
+ * Append a new API key entry to the user's record.
+ * The caller is responsible for generating the entry via generateApiKey().
+ */
+export async function addApiKey(
+  email: string,
+  entry: ApiKeyEntry
+): Promise<void> {
+  if (!TEABLE_USERS_TABLE_ID) return;
+  const { baseUrl, apiKey } = requireConfig();
+
+  const existing = await getUserData(email);
+  const keys = existing.apiKeys ?? [];
+  keys.push(entry);
+
+  const res = await fetch(`${baseUrl}/api/table/${TEABLE_USERS_TABLE_ID}/record`, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({
+      records: [{
+        id: (await findRecordByEmail(TEABLE_USERS_TABLE_ID, email))?.id ?? "",
+        fields: { api_keys: JSON.stringify(keys) },
+      }],
+      fieldKeyType: "name",
+      typecast: true,
+    }),
+    signal: AbortSignal.timeout(8_000),
+  });
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    console.error("[addApiKey] Teable PATCH failed:", res.status, body);
+  }
+}
+
+/** Update the lastUsedAt timestamp for a given API key (fire-and-forget). */
+export async function updateApiKeyLastUsed(
+  email: string,
+  keyId: string
+): Promise<void> {
+  try {
+    const existing = await getUserData(email);
+    const keys = existing.apiKeys ?? [];
+    const idx = keys.findIndex((k) => k.keyId === keyId);
+    if (idx === -1) return;
+
+    keys[idx] = { ...keys[idx], lastUsedAt: new Date().toISOString() };
+
+    if (!TEABLE_USERS_TABLE_ID) return;
+    const { baseUrl, apiKey } = requireConfig();
+    const record = await findRecordByEmail(TEABLE_USERS_TABLE_ID, email);
+    if (!record) return;
+
+    await fetch(`${baseUrl}/api/table/${TEABLE_USERS_TABLE_ID}/record`, {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({
+        records: [{ id: record.id, fields: { api_keys: JSON.stringify(keys) } }],
+        fieldKeyType: "name",
+        typecast: true,
+      }),
+      signal: AbortSignal.timeout(5_000),
+    });
+  } catch {
+    // fire-and-forget — don't block the API response
+  }
+}
+
+/** Remove an API key by its keyId. */
+export async function removeApiKey(
+  email: string,
+  keyId: string
+): Promise<void> {
+  if (!TEABLE_USERS_TABLE_ID) return;
+  const { baseUrl, apiKey } = requireConfig();
+
+  const existing = await getUserData(email);
+  const keys = (existing.apiKeys ?? []).filter((k) => k.keyId !== keyId);
+
+  const res = await fetch(`${baseUrl}/api/table/${TEABLE_USERS_TABLE_ID}/record`, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({
+      records: [{
+        id: (await findRecordByEmail(TEABLE_USERS_TABLE_ID, email))?.id ?? "",
+        fields: { api_keys: JSON.stringify(keys) },
+      }],
+      fieldKeyType: "name",
+      typecast: true,
+    }),
+    signal: AbortSignal.timeout(8_000),
+  });
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    console.error("[removeApiKey] Teable PATCH failed:", res.status, body);
+  }
+}
+
+/**
+ * Find a user by their full API key (prefixed sk_tzk_...).
+ *
+ * Extracts the keyId from the key, hashes the full key for comparison,
+ * and searches Teable for a user whose api_keys field contains the keyId.
+ * If a match is found and the hash matches, returns the user's data.
+ */
+export async function findUserByApiKey(
+  fullKey: string
+): Promise<
+  (UserData & { matchedEntry: ApiKeyEntry }) | null
+> {
+  const keyId = parseKeyId(fullKey);
+  if (!keyId) return null;
+
+  const hashedKey = hashApiKey(fullKey);
+
+  // Search all users whose api_keys JSON contains this keyId
+  if (!TEABLE_USERS_TABLE_ID) return null;
+  const { baseUrl, apiKey } = requireConfig();
+
+  const filter = JSON.stringify({
+    conjunction: "and",
+    filterSet: [
+      { fieldId: "api_keys", operator: "contains", value: keyId },
+    ],
+  });
+
+  const url = `${baseUrl}/api/table/${TEABLE_USERS_TABLE_ID}/record?filter=${encodeURIComponent(filter)}&take=10&fieldKeyType=name`;
+
+  try {
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" },
+      signal: AbortSignal.timeout(8_000),
+    });
+
+    if (!res.ok) return null;
+    const data: any = await res.json();
+    if (!data?.records?.length) return null;
+
+    // Iterate matching records to find the exact key hash match
+    for (const record of data.records) {
+      let keys: ApiKeyEntry[] = [];
+      try {
+        const raw = record.fields.api_keys as string | undefined;
+        if (raw) keys = JSON.parse(raw);
+      } catch { /* skip unparseable */ }
+
+      for (const entry of keys) {
+        if (entry.keyHash === hashedKey) {
+          return {
+            email: (record.fields.email as string) ?? "",
+            passwordHash: undefined,
+            plan: (record.fields.plan as "free" | "credits" | "pro") ?? "free",
+            creditsRemaining: (record.fields.creditsRemaining as number) ?? 0,
+            provider: (record.fields.provider as "credentials" | "google" | "github" | "") ?? "",
+            apiKeys: keys,
+            matchedEntry: entry,
+          };
+        }
+      }
+    }
+
+    return null;
+  } catch (err) {
+    console.error("[findUserByApiKey] Error:", err);
+    return null;
+  }
 }

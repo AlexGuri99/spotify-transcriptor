@@ -1,0 +1,968 @@
+import * as cheerio from "cheerio";
+import Parser from "rss-parser";
+import OpenAI from "openai";
+import ffmpeg from "fluent-ffmpeg";
+import fsSync from "fs";
+import * as fs from "fs/promises";
+import * as path from "path";
+import * as os from "os";
+import { Readable } from "stream";
+import { finished } from "stream/promises";
+import { findCachedEpisode, saveEpisodeRecord } from "@/lib/teable";
+import { findViaPodcastIndex } from "@/lib/podcast-index";
+
+/* ------------------------------------------------------------------ */
+/* Types                                                             */
+/* ------------------------------------------------------------------ */
+
+export interface ScrapedMetadata {
+  episodeTitle: string;
+  showName: string;
+}
+
+export interface TranscriptSegment {
+  start: number;
+  end: number;
+  text: string;
+}
+
+/* ------------------------------------------------------------------ */
+/* Constants & Config                                                */
+/* ------------------------------------------------------------------ */
+
+const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
+
+/** Maximum binary size before we split into chunks. */
+export const CHUNK_SIZE_BYTES = 1 * 1024 * 1024;
+
+/** Duration of each audio chunk in seconds (30s keeps Base64 payload small). */
+export const CHUNK_DURATION_SECONDS = 30;
+
+/** Max concurrent Whisper requests — keeps RAM under 512 MB. */
+export const MAX_CONCURRENT_TRANSCRIBERS = 3;
+
+/** 22-char alphanumeric Spotify episode ID. */
+export const EPISODE_ID_RE = /\/episode\/([a-zA-Z0-9]{22})/;
+
+export const YOUTUBE_URL_RE = /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/;
+export const APPLE_URL_RE = /podcasts\.apple\.com\/.*\/id(\d+)/;
+export const APPLE_EPISODE_ID_RE = /[\?&]i=(\d+)/;
+
+/** In-memory processing lock — prevents duplicate transcription of the same episode. */
+export const inProgressEpisodeIds = new Set<string>();
+
+/* ------------------------------------------------------------------ */
+/* OpenRouter client                                                  */
+/* ------------------------------------------------------------------ */
+
+export function createOpenRouterClient() {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) {
+    throw new Error("OPENROUTER_API_KEY is not configured. Set it in your .env.local file.");
+  }
+  return new OpenAI({
+    baseURL: OPENROUTER_BASE,
+    apiKey,
+    defaultHeaders: {
+      "HTTP-Referer": "https://github.com/spotify-transcriptor",
+      "X-Title": "Spotify Transcriptor",
+    },
+    maxRetries: 2,
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/* Platform detection                                                 */
+/* ------------------------------------------------------------------ */
+
+export function detectPlatform(url: string): "spotify" | "youtube" | "apple" | null {
+  if (EPISODE_ID_RE.test(url)) return "spotify";
+  if (YOUTUBE_URL_RE.test(url)) return "youtube";
+  if (APPLE_URL_RE.test(url)) return "apple";
+  return null;
+}
+
+export function extractUrlId(url: string, mode: string): string | null {
+  switch (mode) {
+    case "spotify": return url.match(EPISODE_ID_RE)?.[1] ?? null;
+    case "youtube": return url.match(YOUTUBE_URL_RE)?.[1] ?? null;
+    case "apple": return url.match(APPLE_EPISODE_ID_RE)?.[1] ?? null;
+    default: return null;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Spotify: oEmbed metadata                                           */
+/* ------------------------------------------------------------------ */
+
+export async function scrapeSpotifyEpisode(url: string): Promise<ScrapedMetadata | null> {
+  const idMatch = url.match(EPISODE_ID_RE);
+  if (!idMatch) {
+    throw new Error("Could not extract a valid episode ID from the URL. Expected format: /episode/[22_chars]");
+  }
+
+  const oembedUrl = `https://open.spotify.com/oembed?url=${encodeURIComponent(url)}`;
+  const res = await fetch(oembedUrl, {
+    headers: { Accept: "application/json" },
+  });
+
+  if (!res.ok) throw new Error(`Spotify oEmbed returned HTTP ${res.status}.`);
+
+  const data: any = await res.json();
+
+  const rawTitle: string = data?.title?.trim() ?? "";
+  const authorName: string = data?.author_name?.trim() ?? "";
+
+  if (!rawTitle) return null;
+
+  let episodeTitle: string;
+  let showName: string;
+
+  if (authorName) {
+    showName = authorName;
+  } else {
+    const pipeParts = rawTitle.split(" | ").map((s) => s.trim());
+    if (pipeParts.length >= 3) {
+      showName = pipeParts[1];
+    } else if (pipeParts.length === 2) {
+      showName = pipeParts[1];
+    } else {
+      showName = "Unknown Show";
+    }
+  }
+
+  const hasIndexPrefix = /^(?:×¤×¨×§\s|Ep[\s.]|Episode\s)/i.test(rawTitle);
+
+  if (hasIndexPrefix) {
+    episodeTitle = rawTitle;
+  } else {
+    const pipeParts = rawTitle.split(" | ").map((s) => s.trim());
+    const titleMinusShow = pipeParts[0];
+    const dashMatch = titleMinusShow.match(/^(.+?)\s+[-â€“â€”]\s+(.+)$/);
+    episodeTitle = dashMatch ? dashMatch[1].trim() : titleMinusShow;
+  }
+
+  return { episodeTitle, showName };
+}
+
+/* ------------------------------------------------------------------ */
+/* RSS feed resolution (iTunes + helpers)                             */
+/* ------------------------------------------------------------------ */
+
+export type RssFeedResult =
+  | { found: true; feedUrl: string; feedTitle: string; directAudioUrl?: string }
+  | { found: false; reason: "empty-results" | "no-match" | "unknown-show" };
+
+export function sanitizeTitle(title: string): string {
+  return title.toLowerCase().replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim();
+}
+
+export function extractEpisodeNumber(title: string): string | null {
+  const m = title.match(/(?:#|ep(?:isode)?\.?\s*)(\d+)/i);
+  return m ? m[1] : null;
+}
+
+export function wordOverlapRatio(a: string, b: string): number {
+  const wa = a.split(/\s+/).filter(Boolean);
+  const wb = b.split(/\s+/).filter(Boolean);
+  if (!wa.length || !wb.length) return 0;
+  const common = wa.filter((w) => wb.includes(w)).length;
+  return common / Math.max(wa.length, wb.length);
+}
+
+function cleanSearchQuery(title: string): string {
+  return title
+    .replace(/[\[\(\{].*?[\]\)\}]/g, " ")
+    .replace(/[^a-zA-Z\s]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export async function findRssFeed(
+  showName: string,
+  episodeTitle?: string
+): Promise<RssFeedResult> {
+  if (episodeTitle) {
+    const cleanedEp = cleanSearchQuery(episodeTitle);
+
+    const epRes = await fetch(
+      `https://itunes.apple.com/search?media=podcast&entity=podcastEpisode&term=${encodeURIComponent(cleanedEp)}&limit=10`,
+      { headers: { Accept: "application/json" } }
+    );
+
+    if (epRes.ok) {
+      const epData: any = await epRes.json();
+      if (epData.results?.length) {
+        const knownFalsePositives = ["trading secrets"];
+
+        const scored: { result: any; score: number; exact: boolean; showMatchScore: number }[] = [];
+
+        const sanitizedShow = showName ? sanitizeTitle(showName) : "";
+
+        for (const r of epData.results) {
+          const sanitizedTrack = sanitizeTitle(r.trackName ?? "");
+          const sanitizedTarget = sanitizeTitle(episodeTitle);
+          const score = wordOverlapRatio(sanitizedTarget, sanitizedTrack);
+          const exactMatch = sanitizedTrack === sanitizedTarget;
+
+          const collectionKey = (r.collectionName ?? "").toLowerCase().trim();
+          const isKnownFP = knownFalsePositives.some((fp) =>
+            collectionKey.includes(fp)
+          );
+
+          if (isKnownFP && !exactMatch) continue;
+
+          const sanitizedCollection = sanitizeTitle(r.collectionName ?? "");
+          const showMatchScore = sanitizedShow
+            ? wordOverlapRatio(sanitizedCollection, sanitizedShow)
+            : 0;
+
+          scored.push({ result: r, score, exact: exactMatch, showMatchScore });
+        }
+
+        if (scored.length) {
+          scored.sort((a, b) => {
+            if (a.exact && a.showMatchScore >= 0.5) return -1;
+            if (b.exact && b.showMatchScore >= 0.5) return 1;
+            const aCombined = a.score + a.showMatchScore;
+            const bCombined = b.score + b.showMatchScore;
+            return bCombined - aCombined;
+          });
+
+          const hasMatchingShow = scored.some((s) => s.showMatchScore >= 0.5);
+          const best =
+            (hasMatchingShow
+              ? scored.find((s) => s.result.enclosureUrl && s.showMatchScore >= 0.5)
+              : null) ??
+            scored.find((s) => s.result.enclosureUrl) ??
+            (hasMatchingShow
+              ? scored.find((s) => s.result.feedUrl && s.showMatchScore >= 0.5)
+              : null) ??
+            scored.find((s) => s.result.feedUrl);
+
+          if (best) {
+            const directAudioUrl = best.result.enclosureUrl ?? null;
+            if (directAudioUrl) {
+              return {
+                found: true,
+                feedUrl: best.result.feedUrl ?? "",
+                feedTitle: best.result.collectionName ?? "",
+                directAudioUrl,
+              };
+            }
+            return {
+              found: true,
+              feedUrl: best.result.feedUrl,
+              feedTitle: best.result.collectionName ?? "",
+            };
+          }
+        }
+      }
+    }
+  }
+
+  const isUnknownShow = !showName || /^unknown\s*show$/i.test(showName);
+  if (isUnknownShow) return { found: false, reason: "unknown-show" };
+
+  const cleanedName = cleanSearchQuery(showName);
+
+  const showRes = await fetch(
+    `https://itunes.apple.com/search?term=${encodeURIComponent(cleanedName)}&entity=podcast&limit=5`,
+    { headers: { Accept: "application/json" } }
+  );
+
+  if (!showRes.ok) return { found: false, reason: "no-match" };
+
+  const data: any = await showRes.json();
+  if (!data.results?.length) return { found: false, reason: "empty-results" };
+
+  const normalizedTarget = cleanedName.toLowerCase().replace(/[^a-z0-9]/g, "");
+  for (const r of data.results) {
+    const candidate = (r.collectionName ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (r.feedUrl && candidate.includes(normalizedTarget)) {
+      return { found: true, feedUrl: r.feedUrl, feedTitle: r.collectionName };
+    }
+  }
+
+  const first = data.results.find((r: any) => r.feedUrl);
+  if (first) return { found: true, feedUrl: first.feedUrl, feedTitle: first.collectionName };
+
+  return { found: false, reason: "no-match" };
+}
+
+/** Parse the RSS XML and locate the episode with a matching title or GUID. */
+export async function findEpisodeInFeed(
+  feedUrl: string,
+  episodeTitle: string,
+  spotifyEpisodeId?: string
+): Promise<{ title: string; enclosureUrl: string | null; description?: string } | null> {
+  const parser = new Parser({
+    timeout: 15_000,
+    headers: {
+      "User-Agent": "Mozilla/5.0 (compatible; SpotifyTranscriptor/1.0; +https://github.com)",
+    },
+  });
+
+  const feed = await parser.parseURL(feedUrl);
+  if (!feed.items?.length) return null;
+
+  if (spotifyEpisodeId) {
+    const lowerId = spotifyEpisodeId.toLowerCase();
+    for (const item of feed.items) {
+      const guid = (item.guid ?? "").toLowerCase();
+      if (guid.includes(lowerId)) {
+        const enclosureUrl = item.enclosure?.url ?? item.link ?? null;
+        if (enclosureUrl) return { title: item.title ?? episodeTitle, enclosureUrl, description: item.contentSnippet ?? item.description ?? undefined };
+      }
+    }
+  }
+
+  const sanitizedTarget = sanitizeTitle(episodeTitle);
+  const targetEpNum = extractEpisodeNumber(episodeTitle);
+
+  let bestFallback: { item: any; score: number } | null = null;
+
+  for (const item of feed.items) {
+    const itemTitle = [item.title, (item as any)["itunes:title"]].filter(Boolean).join(" ") || "";
+    const sanitizedItem = sanitizeTitle(itemTitle);
+
+    if (sanitizedItem.includes(sanitizedTarget) || sanitizedTarget.includes(sanitizedItem)) {
+      const enclosureUrl = item.enclosure?.url ?? item.link ?? null;
+      if (enclosureUrl) return { title: itemTitle, enclosureUrl, description: item.contentSnippet ?? item.description ?? undefined };
+    }
+
+    if (targetEpNum) {
+      const itemEpNum = extractEpisodeNumber(itemTitle);
+      if (itemEpNum && itemEpNum === targetEpNum) {
+        const enclosureUrl = item.enclosure?.url ?? item.link ?? null;
+        if (enclosureUrl) return { title: itemTitle, enclosureUrl, description: item.contentSnippet ?? item.description ?? undefined };
+      }
+    }
+
+    const score = wordOverlapRatio(sanitizedTarget, sanitizedItem);
+    if (score > 0 && (!bestFallback || score > bestFallback.score || (score === bestFallback.score && (item.isoDate ?? "") > (bestFallback.item.isoDate ?? "")))) {
+      bestFallback = { item, score };
+    }
+  }
+
+  if (bestFallback && bestFallback.score >= 0.70) {
+    const enclosureUrl = bestFallback.item.enclosure?.url ?? bestFallback.item.link ?? null;
+    if (enclosureUrl) return { title: bestFallback.item.title ?? episodeTitle, enclosureUrl, description: bestFallback.item.contentSnippet ?? bestFallback.item.description ?? undefined };
+  }
+
+  return null;
+}
+
+/* ------------------------------------------------------------------ */
+/* Audio: download to disk, get duration, split into chunks           */
+/* ------------------------------------------------------------------ */
+
+export async function streamAudioToDisk(url: string, destinationPath: string): Promise<void> {
+  const res = await fetch(url, {
+    headers: {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+      "Accept": "*/*",
+      "Referer": "https://www.google.com/",
+    },
+  });
+  if (!res.ok) throw new Error(`Failed to download audio (HTTP ${res.status})`);
+  if (!res.body) throw new Error("Audio download body response configuration is empty.");
+
+  const fileStream = fsSync.createWriteStream(destinationPath);
+  await finished(Readable.fromWeb(res.body as any).pipe(fileStream));
+}
+
+export function getAudioDuration(filePath: string): Promise<number> {
+  return new Promise((resolve, reject) => {
+    ffmpeg.ffprobe(filePath, (err, metadata) => {
+      if (err) reject(err);
+      else resolve(metadata?.format?.duration ?? 0);
+    });
+  });
+}
+
+export interface ChunkInfo {
+  path: string;
+  startTime: number;
+  duration: number;
+}
+
+export async function splitAudioIntoChunksOnDisk(
+  inputPath: string,
+  tmpDir: string,
+  totalDuration: number
+): Promise<ChunkInfo[]> {
+  const chunks: ChunkInfo[] = [];
+  const fineDuration = 10;
+  const coarseDuration = 30;
+  const fineSpan = Math.min(120, totalDuration);
+
+  // First 2 min → 10s chunks for fine-grained ad detection
+  for (let start = 0; start < fineSpan; start += fineDuration) {
+    const outputPath = path.join(tmpDir, `fine_${String(chunks.length).padStart(3, "0")}.mp3`);
+    await new Promise<void>((resolve, reject) => {
+      ffmpeg(inputPath)
+        .seekInput(start)
+        .duration(fineDuration)
+        .outputOptions(["-c", "copy", "-map", "0:a"])
+        .output(outputPath)
+        .on("end", () => {
+          chunks.push({ path: outputPath, startTime: start, duration: fineDuration });
+          resolve();
+        })
+        .on("error", reject)
+        .run();
+    });
+  }
+
+  // Rest → 30s chunks
+  if (totalDuration > fineSpan) {
+    const outputPattern = path.join(tmpDir, "coarse_%03d.mp3");
+    await new Promise<void>((resolve, reject) => {
+      ffmpeg(inputPath)
+        .seekInput(fineSpan)
+        .outputOptions([
+          "-f", "segment",
+          "-segment_time", String(coarseDuration),
+          "-reset_timestamps", "1",
+          "-c", "copy",
+          "-map", "0:a",
+        ])
+        .output(outputPattern)
+        .on("end", () => resolve())
+        .on("error", reject)
+        .run();
+    });
+
+    const files = await fs.readdir(tmpDir);
+    const restChunks = files.filter((f) => f.startsWith("coarse_")).sort();
+    for (let i = 0; i < restChunks.length; i++) {
+      const startTime = fineSpan + i * coarseDuration;
+      chunks.push({
+        path: path.join(tmpDir, restChunks[i]),
+        startTime,
+        duration: Math.min(coarseDuration, totalDuration - startTime),
+      });
+    }
+  }
+
+  return chunks;
+}
+
+export async function transcribeChunk(
+  chunkPath: string,
+  chunkIndex: number,
+  totalChunks: number
+): Promise<string> {
+  const label = `Chunk ${chunkIndex}/${totalChunks}`;
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const buffer = await fs.readFile(chunkPath);
+      const rawBase64 = buffer.toString("base64");
+
+      const response = await fetch("https://openrouter.ai/api/v1/audio/transcriptions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "openai/whisper-large-v3-turbo",
+          input_audio: {
+            format: "mp3",
+            data: rawBase64,
+          },
+        }),
+      });
+
+      const responseData = await response.json();
+      if (!response.ok) throw new Error(responseData?.error?.message || `HTTP ${response.status}`);
+
+      const text = (responseData.text || "").trim();
+      return text;
+    } catch (err: any) {
+      if (attempt < 3) {
+        const delay = Math.min(1000 * 2 ** (attempt - 1), 10000);
+        await new Promise((r) => setTimeout(r, delay));
+      }
+    }
+  }
+
+  return `[âš ï¸ Audio segment unavailable â€” ${label}]`;
+}
+
+/* ------------------------------------------------------------------ */
+/* Ad filtering — pattern-based + LLM-based                           */
+/* ------------------------------------------------------------------ */
+
+export const AD_PATTERNS = [
+  /\bbrought\s+to\s+you\s+by\b/i,
+  /\bsponsored\s+by\b/i,
+  /\bthis\s+episode\s+is?\s+(?:brought|sponsored)/i,
+  /\b(?:use|enter)\s+code\b/i,
+  /\bpromo\s*code\b/i,
+  /\bdiscount\s+code\b/i,
+  /\bapply\s+for\b.*\b(?:card|credit)\b/i,
+  /\bfind\s+out\s+more\s+at\b/i,
+  /\blearn\s+more\s+at\b/i,
+  /\bsign\s+up\s+(?:at|today|now)\b/i,
+  /\bdownload\s+(?:the\s+)?(?:our\s+)?app\b/i,
+  /\bget\s+\$[\d.]+\s+(?:when|off|back|in)\b/i,
+  /\bfor\s+a\s+limited\s+time\b/i,
+  /\bterms?\s+(?:and|&)\s+conditions?\s+apply\b/i,
+  /\b(?:18|21)\s*\+\s*(?:only\s+)?(?:and\s+)?restrictions?\b/i,
+  /\btext\s+\w+\s+to\s+[\d]+\b/i,
+  /\btrade\s+the\s+beautiful\s+game\b/i,
+  /\b(?:this\s+)?message\s+is?\s+brought\s+to\s+you\b/i,
+  /\bthanks?\s+to\s+our\s+sponsor\b/i,
+  /\boffer\s+ends\s+\w+\s+\d+/i,
+];
+
+export function segmentMatchesAdPattern(text: string): boolean {
+  return AD_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+export function filterAdsByPattern(
+  segments: TranscriptSegment[]
+): { kept: TranscriptSegment[]; removed: number } {
+  const kept = segments.filter((seg) => !segmentMatchesAdPattern(seg.text));
+  return { kept, removed: segments.length - kept.length };
+}
+
+export async function filterAds(
+  openai: OpenAI,
+  rawTranscript: string,
+  segments: TranscriptSegment[],
+  description?: string
+): Promise<{ text: string; segments: TranscriptSegment[] }> {
+  if (segments.length === 0) return { text: rawTranscript, segments };
+
+  const segmentLines = segments
+    .map((s, i) => `[${i}] ${s.text}`)
+    .join("\n\n");
+
+  const response = await openai.chat.completions.create({
+    model: "openai/gpt-4o-mini",
+    messages: [
+      {
+        role: "system",
+        content: [
+          "You are a podcast transcript editor. Segments are labeled with [index].",
+          "",
+          "Do TWO things:",
+          "1) Return the FULL transcript with ALL sponsor reads, ad reads, promo codes, and paid endorsements REMOVED.",
+          "2) Identify which segment contains the first line of actual podcast content.",
+          "",
+          "Rules for removing ads:",
+          "- Remove entire ad segments (sponsor reads, promo codes, paid endorsements).",
+          "- If a segment mixes ad and content, REMOVE only the ad portion and KEEP the content.",
+          "- Do NOT remove host banter, episode topic previews, or show self-promotion.",
+          "- ONLY remove segments that are clearly third-party paid advertisements.",
+          "",
+          "Return ONLY valid JSON (no markdown, no explanation):",
+          JSON.stringify({
+            cleaned_transcript: "transcript with ads removed...",
+            first_content_index: 4,
+            first_content_text: null,
+          }),
+          "",
+          "- cleaned_transcript: the full transcript with ad content removed. Do NOT rewrite or paraphrase.",
+          "- first_content_index: the 0-based segment index where the actual podcast content FIRST begins.",
+          "- first_content_text: OPTIONAL. If the first content segment also contains the tail of an ad, set this to the exact text where content starts. Otherwise null.",
+          "",
+          "HINT: The episode show notes (provided below) list the episode's sponsors. Use this as a signal when identifying ad segments.",
+        ].join("\n"),
+      },
+      { role: "user", content: (description ? `Episode show notes:\n${description}\n\n---\n\nSegments:\n${segmentLines}` : segmentLines) },
+    ],
+    temperature: 0.1,
+    max_tokens: 4096,
+  });
+
+  const raw = response.choices?.[0]?.message?.content?.trim();
+  if (!raw) return { text: rawTranscript, segments };
+
+  let parsed: any;
+  try {
+    const json = raw.replace(/^```(?:json)?\s*/, "").replace(/\s*```$/, "");
+    parsed = JSON.parse(json);
+  } catch {
+    return filterByOverlap(raw, rawTranscript, segments);
+  }
+
+  const cleanedTranscript: string | undefined = parsed?.cleaned_transcript;
+  if (!cleanedTranscript || cleanedTranscript.length < 10) return { text: rawTranscript, segments };
+
+  const keptSegments = filterSegmentsByOverlap(segments, cleanedTranscript);
+
+  const firstContentIndex: number | undefined = parsed.first_content_index;
+  if (typeof firstContentIndex === "number" && firstContentIndex > 0 && firstContentIndex < segments.length) {
+    const boundaryIdx = keptSegments.findIndex(s => {
+      const origIdx = segments.indexOf(s);
+      return origIdx >= firstContentIndex;
+    });
+    if (boundaryIdx > 0) keptSegments.splice(0, boundaryIdx);
+  }
+
+  const firstContentText: string | undefined = parsed.first_content_text;
+  if (firstContentText && typeof firstContentText === "string" && firstContentText.length > 10 && keptSegments.length > 0) {
+    const startPos = keptSegments[0].text.indexOf(firstContentText);
+    if (startPos > 0) keptSegments[0] = { ...keptSegments[0], text: keptSegments[0].text.slice(startPos) };
+  }
+
+  if (keptSegments.length === 0) return { text: cleanedTranscript, segments };
+  const text = keptSegments.map((s) => s.text).join("\n\n");
+  return { text, segments: keptSegments };
+}
+
+export function filterSegmentsByOverlap(
+  segments: TranscriptSegment[],
+  cleaned: string
+): TranscriptSegment[] {
+  const cleanedLower = cleaned.toLowerCase();
+
+  function overlapRatio(segText: string): number {
+    const words = segText.toLowerCase().split(/\s+/).filter((w) => w.length > 3);
+    if (words.length === 0) return 0;
+    let matched = 0;
+    for (const w of words) {
+      if (cleanedLower.includes(w)) matched++;
+    }
+    return matched / words.length;
+  }
+
+  return segments.filter((seg) => overlapRatio(seg.text) >= 0.4);
+}
+
+function filterByOverlap(
+  cleaned: string,
+  rawTranscript: string,
+  segments: TranscriptSegment[]
+): { text: string; segments: TranscriptSegment[] } {
+  const keptSegments = filterSegmentsByOverlap(segments, cleaned);
+  if (keptSegments.length === 0) return { text: rawTranscript, segments };
+  const text = keptSegments.map((s) => s.text).join("\n\n");
+  return { text, segments: keptSegments };
+}
+
+/* ------------------------------------------------------------------ */
+/* Apple Podcasts — iTunes lookup → direct audio URL                  */
+/* ------------------------------------------------------------------ */
+
+export async function resolveAppleEpisode(episodeId: string): Promise<{
+  audioUrl: string;
+  episodeTitle: string;
+  showName: string;
+}> {
+  const res = await fetch(
+    `https://itunes.apple.com/lookup?id=${episodeId}&entity=podcastEpisode`,
+    { headers: { Accept: "application/json" } }
+  );
+  if (!res.ok) throw new Error(`iTunes lookup returned HTTP ${res.status}`);
+  const data: any = await res.json();
+  const result = data.results?.[0];
+  if (!result) throw new Error("Episode not found on Apple Podcasts.");
+  const audioUrl = result.previewUrl ?? result.episodeUrl;
+  if (!audioUrl) throw new Error("No audio URL found for this Apple Podcasts episode.");
+  return {
+    audioUrl,
+    episodeTitle: result.trackName ?? "Unknown Episode",
+    showName: result.collectionName ?? "Unknown Show",
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* YouTube — native timed captions                                    */
+/* ------------------------------------------------------------------ */
+
+export async function fetchYouTubeCaptions(videoId: string): Promise<{
+  episodeTitle: string;
+  showName: string;
+  segments: TranscriptSegment[];
+}> {
+  const pageRes = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
+    headers: {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+    },
+  });
+  if (!pageRes.ok) throw new Error(`Failed to fetch YouTube page (HTTP ${pageRes.status})`);
+  const html = await pageRes.text();
+
+  let episodeTitle = "Unknown Video";
+  let showName = "Unknown Channel";
+  const titleMatch = html.match(/<title>([^<]*)<\/title>/);
+  if (titleMatch) episodeTitle = titleMatch[1].replace(" - YouTube", "").trim();
+  const channelMatch = html.match(/"author":"([^"]+)"/);
+  if (channelMatch) showName = channelMatch[1];
+
+  const playerMatch = html.match(/ytInitialPlayerResponse\s*=\s*({.*?});/);
+  if (!playerMatch) throw new Error("Could not extract player response from YouTube page.");
+  const playerData: any = JSON.parse(playerMatch[1]);
+  const captionTracks = playerData?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+  if (!captionTracks?.length) throw new Error("No captions available for this YouTube video.");
+
+  const track = captionTracks.find((t: any) => t.languageCode?.startsWith("en")) ?? captionTracks[0];
+  const captionsUrl: string | undefined = track.baseUrl;
+  if (!captionsUrl) throw new Error("Caption track baseUrl is empty or undefined.");
+
+  const captionsRes = await fetch(captionsUrl);
+  if (!captionsRes.ok) throw new Error(`Failed to fetch captions (HTTP ${captionsRes.status})`);
+  const captionsXml = await captionsRes.text();
+  if (!captionsXml.trim()) throw new Error("Captions XML body is empty.");
+
+  const segments: TranscriptSegment[] = [];
+  const textRe = /<text start="([\d.]+)" dur="([\d.]*)"[^>]*>([\s\S]*?)<\/text>/g;
+  let m: RegExpExecArray | null;
+  while ((m = textRe.exec(captionsXml)) !== null) {
+    const start = parseFloat(m[1]);
+    const dur = m[2] ? parseFloat(m[2]) : 2;
+    const text = m[3]
+      .replace(/<[^>]+>/g, "")
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, "\"")
+      .replace(/&#39;/g, "'")
+      .trim();
+    if (text) segments.push({ start, end: start + dur, text });
+  }
+
+  if (!segments.length) throw new Error("No caption text found.");
+  return { episodeTitle, showName, segments };
+}
+
+/* ------------------------------------------------------------------ */
+/* Pipeline orchestrator                                              */
+/* ------------------------------------------------------------------ */
+
+export interface TranscribeOptions {
+  url: string;
+  filterAds: boolean;
+  email: string;
+  episodeId: string;
+}
+
+export interface TranscribeResult {
+  metadata: ScrapedMetadata;
+  rssFeedUrl: string | null;
+  transcript: string;
+  segments: TranscriptSegment[];
+  adFiltered: boolean;
+  executionTime: number;
+  logs: Record<string, unknown>;
+}
+
+export async function runTranscriptionPipeline(
+  options: TranscribeOptions,
+  onProgress?: (message: string) => void
+): Promise<TranscribeResult> {
+  const startTime = Date.now();
+  const { url, filterAds: filterAdsFlag, email, episodeId } = options;
+
+  const logBuffer: string[] = [];
+  const originalLog = console.log;
+  const originalError = console.error;
+  console.log = (...args: any[]) => {
+    logBuffer.push(args.map((a) => typeof a === "string" ? a : JSON.stringify(a)).join(" "));
+    originalLog.apply(console, args);
+  };
+  console.error = (...args: any[]) => {
+    logBuffer.push("[ERROR] " + args.map((a) => typeof a === "string" ? a : JSON.stringify(a)).join(" "));
+    originalError.apply(console, args);
+  };
+
+  let tmpDir = "";
+
+  try {
+    const openai = createOpenRouterClient();
+
+    // Cache check
+    const cachedEpisode = await findCachedEpisode(episodeId);
+    if (cachedEpisode) {
+      if (onProgress) onProgress("Loading cached transcript...");
+      const rawTranscript = cachedEpisode.segments.map((s) => s.text).join("\n\n");
+
+      let transcript = rawTranscript;
+      let adFiltered = false;
+      if (filterAdsFlag) {
+        const filtered = await filterAds(openai, rawTranscript, cachedEpisode.segments);
+        transcript = filtered.text;
+        adFiltered = true;
+        if (filtered.segments.length > 0) {
+          cachedEpisode.segments.length = 0;
+          cachedEpisode.segments.push(...filtered.segments);
+        }
+      }
+
+      return {
+        metadata: { episodeTitle: cachedEpisode.title, showName: "" },
+        rssFeedUrl: null,
+        transcript,
+        segments: cachedEpisode.segments,
+        adFiltered,
+        executionTime: 0,
+        logs: {},
+      };
+    }
+
+    // Spotify pipeline
+    if (onProgress) onProgress("Fetching episode metadata...");
+    const metadata = await scrapeSpotifyEpisode(url);
+    if (!metadata) throw new Error("Could not find episode metadata on that Spotify page.");
+
+    // Parallel RSS resolution
+    if (onProgress) onProgress("Resolving RSS feed via multiple sources...");
+    const [itunesResult, piResult] = await Promise.allSettled([
+      findRssFeed(metadata.showName, metadata.episodeTitle),
+      findViaPodcastIndex(metadata.showName, metadata.episodeTitle),
+    ]);
+
+    const itunesRss = itunesResult.status === "fulfilled"
+      ? itunesResult.value
+      : { found: false as const, reason: "no-match" as const };
+    const piRss = piResult.status === "fulfilled"
+      ? piResult.value
+      : { found: false as const, reason: "no-match" as const };
+
+    const rssResult = piRss.found ? piRss : itunesRss;
+    let rssFeedUrl: string | null = null;
+
+    if (rssResult.found) {
+      rssFeedUrl = rssResult.feedUrl || null;
+    } else if (rssResult.reason === "empty-results") {
+      throw new Error("Show could not be resolved via public directories (Potential Spotify Exclusive).");
+    } else if (rssResult.reason === "unknown-show") {
+      throw new Error("This episode could not be located in public directories and is likely a Spotify Exclusive show.");
+    }
+
+    // Download audio
+    if (onProgress) onProgress("Downloading audio...");
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "st-"));
+
+    let episodeDescription: string | undefined;
+    const directAudioUrl = rssResult.found ? rssResult.directAudioUrl : undefined;
+
+    if (directAudioUrl) {
+      await streamAudioToDisk(directAudioUrl, path.join(tmpDir, "input.mp3"));
+    } else if (rssFeedUrl) {
+      const episode = await findEpisodeInFeed(rssFeedUrl, metadata.episodeTitle, episodeId);
+      if (episode?.enclosureUrl) {
+        episodeDescription = episode.description;
+        await streamAudioToDisk(episode.enclosureUrl, path.join(tmpDir, "input.mp3"));
+      } else {
+        throw new Error("Could not locate or download the audio for this episode.");
+      }
+    } else {
+      throw new Error("Could not locate or download the audio for this episode.");
+    }
+
+    // Duration check
+    if (onProgress) onProgress("Checking audio duration...");
+    const inputPath = path.join(tmpDir, "input.mp3");
+    const duration = await getAudioDuration(inputPath).catch(() => 0);
+    const MAX_DURATION = 5 * 3600;
+    if (duration > MAX_DURATION) {
+      throw new Error(
+        "This episode is " + (duration / 3600).toFixed(1) + " hours long, which exceeds the 5-hour limit."
+      );
+    }
+
+    // Split & transcribe
+    if (onProgress) onProgress("Processing audio segments...");
+    const chunkInfos = await splitAudioIntoChunksOnDisk(inputPath, tmpDir, duration);
+    const total = chunkInfos.length;
+
+    const transcripts: string[] = new Array(total);
+    for (let i = 0; i < total; i += MAX_CONCURRENT_TRANSCRIBERS) {
+      const slice = chunkInfos.slice(i, i + MAX_CONCURRENT_TRANSCRIBERS);
+      await Promise.all(
+        slice.map(async (chunkInfo, sliceIndex) => {
+          const globalIndex = i + sliceIndex;
+          transcripts[globalIndex] = await transcribeChunk(chunkInfo.path, globalIndex + 1, total);
+        })
+      );
+    }
+
+    const rawText = transcripts.join("\n\n");
+    const finalSegments: TranscriptSegment[] = transcripts.map((text, i) => ({
+      start: chunkInfos[i].startTime,
+      end: chunkInfos[i].startTime + chunkInfos[i].duration,
+      text,
+    }));
+    const originalSegmentCount = finalSegments.length;
+
+    // Ad filtering
+    let finalText = rawText;
+    let adFiltered = false;
+    let kept: TranscriptSegment[] = [];
+    let removed = 0;
+
+    if (filterAdsFlag) {
+      const patternResult = filterAdsByPattern(finalSegments);
+      kept = patternResult.kept;
+      removed = patternResult.removed;
+
+      if (kept.length === 0) {
+        finalSegments.length = 0;
+        finalText = "";
+        adFiltered = true;
+      } else {
+        try {
+          const remainingText = kept.map((s) => s.text).join("\n\n");
+          const filtered = await filterAds(openai, remainingText, kept, episodeDescription);
+          finalText = filtered.text;
+          adFiltered = true;
+          if (filtered.segments.length > 0) {
+            finalSegments.length = 0;
+            finalSegments.push(...filtered.segments);
+          }
+        } catch {
+          if (removed > 0) {
+            finalSegments.length = 0;
+            finalSegments.push(...kept);
+            finalText = kept.map((s) => s.text).join("\n\n");
+            adFiltered = true;
+          }
+        }
+      }
+    }
+
+    const elapsedSeconds = (Date.now() - startTime) / 1000;
+
+    // Save to Teable
+    await saveEpisodeRecord({
+      episodeId,
+      episodeTitle: metadata.episodeTitle,
+      segments: finalSegments,
+      executionTime: Number(elapsedSeconds),
+      email,
+      timestamp: new Date().toISOString(),
+      logs: {
+        source: rssResult?.found ? (rssResult.directAudioUrl ? "direct-audio" : "rss-parse") : "none",
+        audioUrl: rssResult?.found ? rssResult.directAudioUrl || rssFeedUrl : null,
+        chunkCount: chunkInfos?.length ?? null,
+        audioDuration: duration ? Math.round(duration) : null,
+        adFilterStage: !filterAds ? "disabled" : (typeof removed === "number" && kept?.length === 0 ? "pattern-only" : adFiltered ? "pattern+llm" : "llm-failed"),
+        segmentsRemovedByPattern: typeof removed === "number" ? removed : 0,
+        segmentsAfterFilter: finalSegments.length,
+        segmentsBeforeFilter: originalSegmentCount,
+        console: logBuffer.join("\n"),
+      },
+    });
+
+    return {
+      metadata,
+      rssFeedUrl,
+      transcript: finalText,
+      segments: finalSegments,
+      adFiltered,
+      executionTime: Number(elapsedSeconds),
+      logs: {},
+    };
+  } finally {
+    console.log = originalLog;
+    console.error = originalError;
+    if (tmpDir) await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
