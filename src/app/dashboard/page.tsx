@@ -766,6 +766,7 @@ function ApiTab({ email: _email }: { email: string }) {
   const [newKey, setNewKey] = useState<NewKeyResponse | null>(null);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState("");
+  const [curlCopied, setCurlCopied] = useState(false);
 
   useEffect(() => {
     fetch("/api/v1/keys")
@@ -932,29 +933,180 @@ function ApiTab({ email: _email }: { email: string }) {
         )}
       </div>
 
-      {/* Quick usage examples */}
+      {/* Quick reference */}
       <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-[0_4px_24px_rgba(0,0,0,0.01)]">
-        <h3 className="font-sans font-bold text-black mb-3">Quick start</h3>
-        <p className="font-sans text-xs text-gray-400 mb-4">Transcribe a podcast episode with curl:</p>
-        <pre className="font-mono rounded-xl bg-gray-50 border border-gray-100 p-4 text-xs text-gray-700 leading-relaxed overflow-x-auto">
-{`curl -X POST https://tranzkript.com/api/v1/transcribe \\
-  -H "Authorization: Bearer sk_tzk_YOUR_KEY_HERE" \\
-  -H "Content-Type: application/json" \\
-  -d '{"url": "https://open.spotify.com/episode/...", "filter_ads": true}'`}
-        </pre>
-        <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {[
-            { method: "GET", path: "/api/v1/me", desc: "Account & usage" },
-            { method: "GET", path: "/api/v1/transcripts/:id", desc: "Cached transcript" },
-          ].map((endpoint) => (
-            <div key={endpoint.path} className="rounded-xl border border-gray-100 bg-gray-50/40 px-4 py-3">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="font-mono text-[11px] font-bold text-green-700 bg-green-100 px-1.5 py-0.5 rounded">{endpoint.method}</span>
-                <code className="font-mono text-xs text-gray-600">{endpoint.path}</code>
+        <h3 className="font-sans font-bold text-black mb-1">API Reference</h3>
+        <p className="font-sans text-xs text-gray-400 mb-5">All endpoints use <code className="font-mono text-xs">Authorization: Bearer sk_tzk_...</code> except key management (web session).</p>
+
+        <div className="space-y-4">
+          {/* 1. Transcribe */}
+          <details className="group rounded-xl border border-gray-100 bg-gray-50/30 open:bg-gray-50/60 transition-all">
+            <summary className="flex items-center justify-between px-5 py-3.5 cursor-pointer list-none">
+              <div className="flex items-center gap-3">
+                <span className="font-mono text-[11px] font-bold text-white bg-black px-1.5 py-0.5 rounded">POST</span>
+                <code className="font-mono text-sm text-gray-800 font-medium">{'/api/v1/transcribe'}</code>
               </div>
-              <p className="font-sans text-xs text-gray-400">{endpoint.desc}</p>
+              <span className="font-sans text-xs text-gray-400 group-open:text-black transition-colors">Transcribe a podcast episode</span>
+            </summary>
+            <div className="px-5 pb-5 border-t border-gray-100 pt-4">
+              <div className="mb-3 space-y-1.5">
+                <p className="font-sans text-xs font-medium text-gray-500">Required params:</p>
+                <div className="grid gap-1.5">
+                  {[
+                    { name: 'url', type: 'string', desc: 'Spotify episode URL (required)' },
+                    { name: 'filter_ads', type: 'boolean', desc: 'Remove ad segments (optional, default false)' },
+                  ].map((p) => (
+                    <div key={p.name} className="flex items-baseline gap-2">
+                      <code className="font-mono text-xs text-black font-medium">{p.name}</code>
+                      <span className="font-mono text-[10px] text-gray-400">{p.type}</span>
+                      <span className="font-sans text-xs text-gray-500">— {p.desc}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="relative">
+                <pre className="font-mono rounded-lg bg-gray-900 p-4 text-xs text-green-300 leading-relaxed overflow-x-auto">{`curl -X POST https://tranzkript.com/api/v1/transcribe \\
+  -H "Authorization: Bearer sk_tzk_YOUR_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"url": "https://open.spotify.com/episode/ID", "filter_ads": true}'`}</pre>
+                <button
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText('curl -X POST https://tranzkript.com/api/v1/transcribe \\\n  -H "Authorization: Bearer sk_tzk_YOUR_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d \'{"url": "https://open.spotify.com/episode/ID", "filter_ads": true}\'');
+                      setCurlCopied(true);
+                      setTimeout(() => setCurlCopied(false), 2000);
+                    } catch {}
+                  }}
+                  className="absolute top-2 right-2 rounded-lg border border-gray-700 bg-gray-800 p-1.5 text-gray-400 hover:text-white hover:border-gray-500 transition-all cursor-pointer"
+                  title="Copy curl command"
+                >
+                  {curlCopied ? <Check className="h-3.5 w-3.5 text-green-400" /> : <Copy className="h-3.5 w-3.5" />}
+                </button>
+              </div>
+              <div className="mt-3 rounded-lg bg-gray-100/80 px-4 py-2.5">
+                <p className="font-sans text-xs text-gray-500">
+                  <span className="font-medium text-gray-700">Returns:</span> JSON with <code className="font-mono text-xs">metadata</code>, <code className="font-mono text-xs">transcript</code>, and <code className="font-mono text-xs">segments</code>
+                </p>
+              </div>
             </div>
-          ))}
+          </details>
+
+          {/* 2. Get transcript */}
+          <details className="group rounded-xl border border-gray-100 bg-gray-50/30 open:bg-gray-50/60 transition-all">
+            <summary className="flex items-center justify-between px-5 py-3.5 cursor-pointer list-none">
+              <div className="flex items-center gap-3">
+                <span className="font-mono text-[11px] font-bold text-green-700 bg-green-100 px-1.5 py-0.5 rounded">GET</span>
+                <code className="font-mono text-sm text-gray-800 font-medium">{'/api/v1/transcripts/:id'}</code>
+              </div>
+              <span className="font-sans text-xs text-gray-400 group-open:text-black transition-colors">Retrieve a cached transcript</span>
+            </summary>
+            <div className="px-5 pb-5 border-t border-gray-100 pt-4">
+              <div className="mb-3 space-y-1.5">
+                <p className="font-sans text-xs font-medium text-gray-500">Path params:</p>
+                <div className="flex items-baseline gap-2">
+                  <code className="font-mono text-xs text-black font-medium">id</code>
+                  <span className="font-mono text-[10px] text-gray-400">string</span>
+                  <span className="font-sans text-xs text-gray-500">— 22-char Spotify episode ID</span>
+                </div>
+              </div>
+              <div className="relative">
+                <pre className="font-mono rounded-lg bg-gray-900 p-4 text-xs text-green-300 leading-relaxed overflow-x-auto">{`curl https://tranzkript.com/api/v1/transcripts/EPISODE_ID \\
+  -H "Authorization: Bearer sk_tzk_YOUR_KEY"`}</pre>
+                <button
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText('curl https://tranzkript.com/api/v1/transcripts/EPISODE_ID \\\n  -H "Authorization: Bearer sk_tzk_YOUR_KEY"');
+                      setCurlCopied(true);
+                      setTimeout(() => setCurlCopied(false), 2000);
+                    } catch {}
+                  }}
+                  className="absolute top-2 right-2 rounded-lg border border-gray-700 bg-gray-800 p-1.5 text-gray-400 hover:text-white hover:border-gray-500 transition-all cursor-pointer"
+                  title="Copy curl command"
+                >
+                  {curlCopied ? <Check className="h-3.5 w-3.5 text-green-400" /> : <Copy className="h-3.5 w-3.5" />}
+                </button>
+              </div>
+              <div className="mt-3 rounded-lg bg-gray-100/80 px-4 py-2.5">
+                <p className="font-sans text-xs text-gray-500">
+                  <span className="font-medium text-gray-700">Returns:</span> JSON with <code className="font-mono text-xs">title</code>, <code className="font-mono text-xs">segments</code>, <code className="font-mono text-xs">execution_time</code>
+                </p>
+              </div>
+            </div>
+          </details>
+
+          {/* 3. Me */}
+          <details className="group rounded-xl border border-gray-100 bg-gray-50/30 open:bg-gray-50/60 transition-all">
+            <summary className="flex items-center justify-between px-5 py-3.5 cursor-pointer list-none">
+              <div className="flex items-center gap-3">
+                <span className="font-mono text-[11px] font-bold text-green-700 bg-green-100 px-1.5 py-0.5 rounded">GET</span>
+                <code className="font-mono text-sm text-gray-800 font-medium">{'/api/v1/me'}</code>
+              </div>
+              <span className="font-sans text-xs text-gray-400 group-open:text-black transition-colors">Account info, usage &amp; API keys</span>
+            </summary>
+            <div className="px-5 pb-5 border-t border-gray-100 pt-4">
+              <div className="relative">
+                <pre className="font-mono rounded-lg bg-gray-900 p-4 text-xs text-green-300 leading-relaxed overflow-x-auto">{`curl https://tranzkript.com/api/v1/me \\
+  -H "Authorization: Bearer sk_tzk_YOUR_KEY"`}</pre>
+                <button
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText('curl https://tranzkript.com/api/v1/me \\\n  -H "Authorization: Bearer sk_tzk_YOUR_KEY"');
+                      setCurlCopied(true);
+                      setTimeout(() => setCurlCopied(false), 2000);
+                    } catch {}
+                  }}
+                  className="absolute top-2 right-2 rounded-lg border border-gray-700 bg-gray-800 p-1.5 text-gray-400 hover:text-white hover:border-gray-500 transition-all cursor-pointer"
+                  title="Copy curl command"
+                >
+                  {curlCopied ? <Check className="h-3.5 w-3.5 text-green-400" /> : <Copy className="h-3.5 w-3.5" />}
+                </button>
+              </div>
+              <div className="mt-3 rounded-lg bg-gray-100/80 px-4 py-2.5">
+                <p className="font-sans text-xs text-gray-500">
+                  <span className="font-medium text-gray-700">Returns:</span> JSON with <code className="font-mono text-xs">email</code>, <code className="font-mono text-xs">plan</code>, <code className="font-mono text-xs">usage</code>, <code className="font-mono text-xs">api_keys</code>
+                </p>
+              </div>
+            </div>
+          </details>
+
+          {/* 4. Key management */}
+          <details className="group rounded-xl border border-gray-100 bg-gray-50/30 open:bg-gray-50/60 transition-all">
+            <summary className="flex items-center justify-between px-5 py-3.5 cursor-pointer list-none">
+              <div className="flex items-center gap-3">
+                <span className="font-mono text-[11px] font-bold text-blue-700 bg-blue-100 px-1.5 py-0.5 rounded">AUTH</span>
+                <code className="font-mono text-sm text-gray-800 font-medium">{'/api/v1/keys'}</code>
+              </div>
+              <span className="font-sans text-xs text-gray-400 group-open:text-black transition-colors">Manage API keys (web session only)</span>
+            </summary>
+            <div className="px-5 pb-5 border-t border-gray-100 pt-4">
+              <p className="font-sans text-xs text-gray-500 mb-3">
+                These endpoints require <span className="font-medium text-gray-700">web session auth</span> (you must be signed in to the dashboard). They cannot be called with an API key.
+              </p>
+              <div className="space-y-2">
+                <div className="rounded-lg bg-gray-100/80 px-4 py-2.5">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="font-mono text-[11px] font-bold text-white bg-blue-600 px-1.5 py-0.5 rounded">POST</span>
+                    <code className="font-mono text-xs text-gray-700">{'/api/v1/keys'}</code>
+                  </div>
+                  <p className="font-sans text-xs text-gray-500">Body: <code className="font-mono text-xs">{'{"name": "My Key"}'}</code> → returns the full key (shown once)</p>
+                </div>
+                <div className="rounded-lg bg-gray-100/80 px-4 py-2.5">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="font-mono text-[11px] font-bold text-green-700 bg-green-100 px-1.5 py-0.5 rounded">GET</span>
+                    <code className="font-mono text-xs text-gray-700">{'/api/v1/keys'}</code>
+                  </div>
+                  <p className="font-sans text-xs text-gray-500">Lists all keys (masked)</p>
+                </div>
+                <div className="rounded-lg bg-gray-100/80 px-4 py-2.5">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="font-mono text-[11px] font-bold text-red-600 bg-red-100 px-1.5 py-0.5 rounded">DELETE</span>
+                    <code className="font-mono text-xs text-gray-700">{'/api/v1/keys/:key_id'}</code>
+                  </div>
+                  <p className="font-sans text-xs text-gray-500">Revokes a key permanently</p>
+                </div>
+              </div>
+            </div>
+          </details>
         </div>
       </div>
     </div>
