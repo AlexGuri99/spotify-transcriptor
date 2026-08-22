@@ -953,7 +953,6 @@ function ApiTab({ email: _email }: { email: string }) {
                 <div className="grid gap-1.5">
                   {[
                     { name: 'url', type: 'string', desc: 'Spotify episode URL (required)' },
-                    { name: 'filter_ads', type: 'boolean', desc: 'Remove ad segments (optional, default false)' },
                   ].map((p) => (
                     <div key={p.name} className="flex items-baseline gap-2">
                       <code className="font-mono text-xs text-black font-medium">{p.name}</code>
@@ -964,11 +963,11 @@ function ApiTab({ email: _email }: { email: string }) {
                 </div>
               </div>
               <div className="relative">
-                <pre className="font-mono rounded-lg bg-gray-900 p-4 text-xs text-green-300 leading-relaxed overflow-x-auto">{`curl -X POST https://tranzkript.com/api/v1/transcribe -H "Authorization: Bearer sk_tzk_YOUR_KEY" -H "Content-Type: application/json" -d '{"url": "https://open.spotify.com/episode/ID", "filter_ads": true}'`}</pre>
+                <pre className="font-mono rounded-lg bg-gray-900 p-4 text-xs text-green-300 leading-relaxed overflow-x-auto">{`curl -X POST https://tranzkript.com/api/v1/transcribe -H "Authorization: Bearer sk_tzk_YOUR_KEY" -H "Content-Type: application/json" -d '{"url": "https://open.spotify.com/episode/ID"}'`}</pre>
                 <button
                   onClick={async () => {
                     try {
-                      await navigator.clipboard.writeText('curl -X POST https://tranzkript.com/api/v1/transcribe -H "Authorization: Bearer sk_tzk_YOUR_KEY" -H "Content-Type: application/json" -d \'{"url": "https://open.spotify.com/episode/ID", "filter_ads": true}\'');
+                      await navigator.clipboard.writeText('curl -X POST https://tranzkript.com/api/v1/transcribe -H "Authorization: Bearer sk_tzk_YOUR_KEY" -H "Content-Type: application/json" -d \'{"url": "https://open.spotify.com/episode/ID"}\'');
                       setCurlCopied(true);
                       setTimeout(() => setCurlCopied(false), 2000);
                     } catch {}

@@ -15,7 +15,6 @@ import { type UserPlan } from "@/lib/rate-limiter";
 
 interface TranscribeRequestBody {
   url: string;
-  filter_ads?: boolean;
 }
 
 /* ------------------------------------------------------------------ */
@@ -34,7 +33,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     );
   }
 
-  const { url, filter_ads: filterAds = false } = body;
+  const { url } = body;
 
   if (!url || typeof url !== "string" || !url.trim()) {
     return NextResponse.json(
@@ -95,13 +94,12 @@ export async function POST(req: NextRequest): Promise<Response> {
   try {
     const result = await runTranscriptionPipeline({
       url: trimmedUrl,
-      filterAds,
+      filterAds: true,
       email: user.email,
       episodeId,
     });
 
-    // Deduct credit (fire-and-forget for session-based; for API keys,
-    // the pipeline already saves the record — only deduct for non-free plans)
+    // Deduct credit for non-free plans
     if (plan !== "free") {
       deductCredit(user.email).catch(() => {});
     }
