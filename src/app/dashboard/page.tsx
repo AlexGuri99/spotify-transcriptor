@@ -1005,7 +1005,11 @@ function ApiTab({ email: _email }: { email: string }) {
                 </div>
               </div>
               <div className="relative">
-                <pre className="font-mono rounded-lg bg-gray-900 p-4 text-xs text-green-300 leading-relaxed overflow-x-auto">{`curl -X POST https://tranzkript.com/api/v1/transcribe -H "Authorization: Bearer sk_tzk_YOUR_KEY" -H "Content-Type: application/json" -d '{"url": "https://open.spotify.com/episode/ID"}'`}</pre>
+                <pre className="font-mono rounded-lg bg-gray-900 p-4 text-xs text-green-300 leading-relaxed overflow-x-auto">{`# Submit — returns instantly with episode_id
+curl -X POST https://tranzkript.com/api/v1/transcribe -H "Authorization: Bearer sk_tzk_YOUR_KEY" -H "Content-Type: application/json" -d '{"url": "https://open.spotify.com/episode/ID"}'
+
+# Poll — check if done
+curl https://tranzkript.com/api/v1/transcripts/ID -H "Authorization: Bearer sk_tzk_YOUR_KEY"`}</pre>
                 <button
                   onClick={async () => {
                     try {
@@ -1022,7 +1026,7 @@ function ApiTab({ email: _email }: { email: string }) {
               </div>
               <div className="mt-3 rounded-lg bg-gray-100/80 px-4 py-2.5">
                 <p className="font-sans text-xs text-gray-500">
-                  <span className="font-medium text-gray-700">Returns:</span> JSON with <code className="font-mono text-xs">metadata</code>, <code className="font-mono text-xs">transcript</code>, and <code className="font-mono text-xs">segments</code>
+                  <span className="font-medium text-gray-700">Returns:</span> <code className="font-mono text-xs">{'{"status":"accepted","episode_id":"..."}'}</code> (202) — poll <code className="font-mono text-xs">/api/v1/transcripts/:id</code> for result
                 </p>
               </div>
             </div>
@@ -1035,7 +1039,7 @@ function ApiTab({ email: _email }: { email: string }) {
                 <span className="font-mono text-[11px] font-bold text-green-700 bg-green-100 px-1.5 py-0.5 rounded">GET</span>
                 <code className="font-mono text-sm text-gray-800 font-medium">{'/api/v1/transcripts/:id'}</code>
               </div>
-              <span className="font-sans text-xs text-gray-400 group-open:text-black transition-colors">Retrieve a cached transcript</span>
+              <span className="font-sans text-xs text-gray-400 group-open:text-black transition-colors">Poll for result — returns processing or completed</span>
             </summary>
             <div className="px-5 pb-5 border-t border-gray-100 pt-4">
               <div className="mb-3 space-y-1.5">
@@ -1064,7 +1068,7 @@ function ApiTab({ email: _email }: { email: string }) {
               </div>
               <div className="mt-3 rounded-lg bg-gray-100/80 px-4 py-2.5">
                 <p className="font-sans text-xs text-gray-500">
-                  <span className="font-medium text-gray-700">Returns:</span> JSON with <code className="font-mono text-xs">title</code>, <code className="font-mono text-xs">segments</code>, <code className="font-mono text-xs">execution_time</code>
+                  <span className="font-medium text-gray-700">Returns:</span> <code className="font-mono text-xs">{"{\"status\":\"processing\"}"}</code> while transcribing, or <code className="font-mono text-xs">{"{\"status\":\"completed\",\"data\":{...}}"}</code> when done
                 </p>
               </div>
             </div>

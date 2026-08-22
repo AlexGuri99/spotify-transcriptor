@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateRequest, ApiAuthError } from "@/lib/api-auth";
 import { findCachedEpisode } from "@/lib/teable";
+import { inProgressEpisodeIds } from "@/lib/transcription-pipeline";
 
 export async function GET(
   req: NextRequest,
@@ -22,6 +23,15 @@ export async function GET(
     return NextResponse.json({ error: "Invalid episode ID." }, { status: 400 });
   }
 
+  // In progress?
+  if (inProgressEpisodeIds.has(episodeId)) {
+    return NextResponse.json({
+      status: "processing",
+      episode_id: episodeId,
+    });
+  }
+
+  // Cached?
   const cached = await findCachedEpisode(episodeId);
 
   if (!cached) {
@@ -29,8 +39,12 @@ export async function GET(
   }
 
   return NextResponse.json({
-    title: cached.title,
-    segments: cached.segments,
-    execution_time: cached.executionTime,
+    status: "completed",
+    episode_id: episodeId,
+    data: {
+      title: cached.title,
+      segments: cached.segments,
+      execution_time: cached.executionTime,
+    },
   });
 }
