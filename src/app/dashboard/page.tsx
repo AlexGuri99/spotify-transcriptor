@@ -48,6 +48,7 @@ interface TranscriptionRecord {
   timestamp: string;
   executionTime: number;
   thumbnailUrl?: string;
+  pending?: boolean;
 }
 
 interface CachedEpisodeData {
@@ -304,6 +305,19 @@ function WorkspaceTab({ email: _email }: { email: string }) {
     setActiveSegmentIndex(null);
     setStatus({ phase: "processing", message: "Starting...", countdown: null });
 
+    // Add a pending history entry
+    const episodeIdMatch = trimmed.match(/\/episode\/([a-zA-Z0-9]{22})/);
+    const pendingId = episodeIdMatch?.[1] ?? "pending-" + Date.now();
+    const pendingEntry: TranscriptionRecord = {
+      id: pendingId,
+      episodeTitle: trimmed.length > 50 ? trimmed.slice(0, 50) + "..." : trimmed,
+      spotifyUrl: trimmed,
+      timestamp: new Date().toISOString(),
+      executionTime: 0,
+      pending: true,
+    };
+    setHistory((prev) => [pendingEntry, ...prev]);
+
     let countdownInterval: ReturnType<typeof setInterval> | null = null;
     let gotResult = false;
 
@@ -324,6 +338,7 @@ function WorkspaceTab({ email: _email }: { email: string }) {
         } catch {}
         if (countdownInterval) clearInterval(countdownInterval);
         setStatus({ phase: "error", error: errorMsg, detail: errorDetail });
+        setHistory((prev) => prev.filter((h) => h.pending !== true));
         return;
       }
 
@@ -382,6 +397,8 @@ function WorkspaceTab({ email: _email }: { email: string }) {
               gotResult = true;
               if (countdownInterval) clearInterval(countdownInterval);
               setStatus({ phase: "error", error: parsed.error, detail: parsed.detail });
+              // Remove the pending entry on error
+              setHistory((prev) => prev.filter((h) => h.pending !== true));
             }
           } catch {}
         }
@@ -389,10 +406,12 @@ function WorkspaceTab({ email: _email }: { email: string }) {
       if (!gotResult) {
         if (countdownInterval) clearInterval(countdownInterval);
         setStatus({ phase: "error", error: "Connection closed before transcription completed." });
+        setHistory((prev) => prev.filter((h) => h.pending !== true));
       }
     } catch (err: any) {
       if (countdownInterval) clearInterval(countdownInterval);
       setStatus({ phase: "error", error: err?.message ?? "Network error — is the server running?" });
+      setHistory((prev) => prev.filter((h) => h.pending !== true));
     }
   }
 
@@ -603,44 +622,67 @@ function WorkspaceTab({ email: _email }: { email: string }) {
           <div className="space-y-3">
             {history.map((item) => (
               <div
-                key={item.id + item.timestamp}
-                className="rounded-2xl border border-gray-200 bg-white p-5 shadow-[0_4px_24px_rgba(0,0,0,0.01)] hover:border-gray-300 transition-all"
+                key={item.id + (item.timestamp || "")}
+                className={`rounded-2xl border bg-white p-5 shadow-[0_4px_24px_rgba(0,0,0,0.01)] transition-all ${
+                  item.pending
+                    ? "border-gray-100 animate-pulse"
+                    : "border-gray-200 hover:border-gray-300"
+                }`}
               >
                 <div className="flex items-start gap-4">
-                  {thumbnails[item.id] && (
+                  {item.pending ? (
+                    <div className="h-14 w-14 rounded-lg bg-gray-100 shrink-0 mt-0.5 flex items-center justify-center">
+                      <div className="h-5 w-5 animate-spin rounded-full border-2 border-gray-300 border-t-black" />
+                    </div>
+                  ) : thumbnails[item.id] ? (
                     <img
                       src={thumbnails[item.id]}
                       alt=""
                       className="h-14 w-14 rounded-lg object-cover shrink-0 mt-0.5"
                     />
-                  )}
+                  ) : null}
                   <div className="min-w-0 flex-1">
-                    <h3 className="font-sans font-bold text-black truncate">{item.episodeTitle}</h3>
-                    <div className="flex items-center gap-3 mt-2">
-                      <span className="font-sans text-xs text-gray-400 flex items-center gap-1">
-                        <Clock className="h-3 w-3" />
-                        {formatDate(item.timestamp)}
-                      </span>
-                      <span className="font-sans text-xs text-gray-400">{item.executionTime.toFixed(1)}s</span>
-                                          </div>
+                    {item.pending ? (
+                      <>
+                        <div className="h-4 w-3/4 bg-gray-100 rounded-full mb-2" />
+                        <div className="h-3 w-1/3 bg-gray-50 rounded-full" />
+                      </>
+                    ) : (
+                      <>
+                        <h3 className="font-sans font-bold text-black truncate">{item.episodeTitle}</h3>
+                        <div className="flex items-center gap-3 mt-2">
+                          <span className="font-sans text-xs text-gray-400 flex items-center gap-1">
+                            <Clock className="h-3 w-3" />
+                            {formatDate(item.timestamp)}
+                          </span>
+                          <span className="font-sans text-xs text-gray-400">{item.executionTime.toFixed(1)}s</span>
+                        </div>
+                      </>
+                    )}
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    <button
-                      onClick={() => openTranscript(item.id)}
-                      className="font-sans shrink-0 rounded-xl border border-gray-200 p-2.5 text-gray-400 hover:border-black hover:text-black transition-all cursor-pointer"
-                      title="View transcript"
-                    >
-                      <FileText className="h-4 w-4" />
-                    </button>
-                    <a
-                      href={item.spotifyUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="font-sans shrink-0 rounded-xl border border-gray-200 p-2.5 text-gray-400 hover:border-black hover:text-black transition-all"
-                      title="Open in Spotify"
-                    >
-                      <ExternalLink className="h-4 w-4" />
-                    </a>
+                    {item.pending ? (
+                      <span className="font-sans text-xs text-gray-300 italic px-2">Transcribing...</span>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => openTranscript(item.id)}
+                          className="font-sans shrink-0 rounded-xl border border-gray-200 p-2.5 text-gray-400 hover:border-black hover:text-black transition-all cursor-pointer"
+                          title="View transcript"
+                        >
+                          <FileText className="h-4 w-4" />
+                        </button>
+                        <a
+                          href={item.spotifyUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-sans shrink-0 rounded-xl border border-gray-200 p-2.5 text-gray-400 hover:border-black hover:text-black transition-all"
+                          title="Open in Spotify"
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                        </a>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
