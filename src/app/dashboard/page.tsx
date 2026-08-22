@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef, FormEvent } from "react";
+import { useState, useEffect, useRef, FormEvent } from "react";
 import { useSession, signOut } from "next-auth/react";
 import { redirect } from "next/navigation";
 import { Newsreader, Inter } from "next/font/google";
@@ -22,7 +22,6 @@ import {
   KeyRound,
   Copy,
   Check,
-  Trash2,
 } from "lucide-react";
 
 const editorialSerif = Newsreader({
@@ -739,198 +738,14 @@ function WorkspaceTab({ email: _email }: { email: string }) {
 }
 
 /* ------------------------------------------------------------------ */
-/* API Tab — manage API keys                                         */
+/* API Tab                                                           */
 /* ------------------------------------------------------------------ */
 
-interface ApiKeyInfo {
-  key_id: string;
-  name: string;
-  created_at: string;
-  last_used_at: string | null;
-}
-
-interface NewKeyResponse {
-  key: string;
-  key_id: string;
-  name: string;
-  masked: string;
-  created_at: string;
-}
-
 function ApiTab({ email: _email }: { email: string }) {
-  const [keys, setKeys] = useState<ApiKeyInfo[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [creating, setCreating] = useState(false);
-  const [keyName, setKeyName] = useState("");
-  const [newKey, setNewKey] = useState<NewKeyResponse | null>(null);
-  const [copied, setCopied] = useState(false);
-  const [error, setError] = useState("");
   const [curlCopied, setCurlCopied] = useState(false);
-
-  useEffect(() => {
-    fetch("/api/keys")
-      .then((r) => r.json())
-      .then((data) => {
-        setKeys(data.api_keys ?? []);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  }, []);
-
-  async function handleCreate(e: FormEvent) {
-    e.preventDefault();
-    setError("");
-    setCreating(true);
-    try {
-      const res = await fetch("/api/keys", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: keyName.trim() || "Default" }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || "Failed to create key.");
-        return;
-      }
-      setNewKey(data);
-      setKeys((prev) => [...prev, { key_id: data.key_id, name: data.name, created_at: data.created_at, last_used_at: null }]);
-      setKeyName("");
-    } catch {
-      setError("Something went wrong.");
-    } finally {
-      setCreating(false);
-    }
-  }
-
-  async function handleRevoke(keyId: string) {
-    try {
-      const res = await fetch(`/api/keys/${keyId}`, { method: "DELETE" });
-      if (res.ok) setKeys((prev) => prev.filter((k) => k.key_id !== keyId));
-    } catch {}
-  }
-
-  async function copyKey(text: string) {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {}
-  }
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <div className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-gray-300 border-t-black" />
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-6">
-      {/* New key secret banner */}
-      {newKey && (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-6 shadow-[0_4px_24px_rgba(0,0,0,0.02)]">
-          <h3 className="font-sans font-bold text-amber-900 mb-2">Key created — copy it now</h3>
-          <p className="font-sans text-xs text-amber-700 mb-3 leading-relaxed">
-            You won't be able to see the full key again. Store it somewhere safe — like a password manager or .env file.
-          </p>
-          <div className="flex items-center gap-2">
-            <code className="font-mono flex-1 rounded-lg border border-amber-200 bg-white px-4 py-2.5 text-sm text-amber-900 break-all select-all">
-              {newKey.key}
-            </code>
-            <button
-              onClick={() => copyKey(newKey.key)}
-              className="rounded-xl border border-amber-200 bg-white p-2.5 text-amber-700 hover:border-amber-400 hover:text-amber-900 transition-all cursor-pointer shrink-0"
-              title="Copy key"
-            >
-              {copied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
-            </button>
-          </div>
-          <button
-            onClick={() => setNewKey(null)}
-            className="font-sans mt-3 text-xs font-medium text-amber-700 hover:text-amber-900 underline underline-offset-2 cursor-pointer"
-          >
-            Dismiss
-          </button>
-        </div>
-      )}
-
-      {/* Create new key */}
-      <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-[0_4px_24px_rgba(0,0,0,0.01)]">
-        <div className="flex items-center gap-3 mb-5">
-          <div className="rounded-xl bg-black/5 p-2.5">
-            <KeyRound className="h-5 w-5 text-black" />
-          </div>
-          <div>
-            <h2 className="font-sans text-lg font-bold text-black">API Keys</h2>
-            <p className="font-sans text-xs text-gray-400">Manage keys for the Tranzkript API</p>
-          </div>
-        </div>
-
-        <form onSubmit={handleCreate} className="flex items-center gap-3 mb-6">
-          <input
-            type="text"
-            value={keyName}
-            onChange={(e) => setKeyName(e.target.value)}
-            placeholder="Key name (e.g. Production, CI)"
-            className="font-sans flex-1 max-w-xs rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm text-[#111111] placeholder-gray-400 transition-all focus:border-black focus:outline-none focus:ring-1 focus:ring-black/10"
-          />
-          <button
-            type="submit"
-            disabled={creating}
-            className="font-sans flex items-center gap-2 rounded-xl bg-black px-5 py-2.5 text-sm font-medium text-white hover:bg-gray-900 transition-all disabled:opacity-50 cursor-pointer whitespace-nowrap"
-          >
-            {creating ? "Creating..." : "Create key"}
-          </button>
-        </form>
-
-        {error && (
-          <p className="font-sans text-xs text-red-500 mb-4">{error}</p>
-        )}
-
-        {/* Key list */}
-        {keys.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-gray-200 p-8 text-center">
-            <KeyRound className="h-8 w-8 text-gray-200 mx-auto mb-3" />
-            <p className="font-sans text-sm text-gray-500">No API keys yet. Create one above.</p>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {keys.map((key) => (
-              <div
-                key={key.key_id}
-                className="flex items-center justify-between rounded-xl border border-gray-100 bg-gray-50/60 px-5 py-3.5"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="font-sans text-sm font-medium text-black">{key.name}</p>
-                  <div className="flex items-center gap-3 mt-1">
-                    <code className="font-mono text-xs text-gray-400">sk_tzk_{key.key_id}...</code>
-                    <span className="font-sans text-[11px] text-gray-300">·</span>
-                    <span className="font-sans text-[11px] text-gray-400">
-                      Created {new Date(key.created_at).toLocaleDateString()}
-                    </span>
-                    {key.last_used_at && (
-                      <>
-                        <span className="font-sans text-[11px] text-gray-300">·</span>
-                        <span className="font-sans text-[11px] text-gray-400">
-                          Last used {new Date(key.last_used_at).toLocaleDateString()}
-                        </span>
-                      </>
-                    )}
-                  </div>
-                </div>
-                <button
-                  onClick={() => handleRevoke(key.key_id)}
-                  className="rounded-xl border border-gray-200 bg-white p-2.5 text-gray-400 hover:border-red-200 hover:text-red-500 transition-all cursor-pointer shrink-0 ml-3"
-                  title="Revoke key"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
 
       {/* Quick reference */}
       <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-[0_4px_24px_rgba(0,0,0,0.01)]">
